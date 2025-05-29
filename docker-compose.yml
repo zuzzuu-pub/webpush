@@ -3,14 +3,16 @@ version: '3.8'
 services:
   app:
     build: .
-    container_name: webpush-app
+    container_name: webpush-test
     restart: unless-stopped
     ports:
       - "8443:8443"
       - "8080:8080"
     volumes:
       - ./logs:/var/log/nginx
-      - ./certs:/etc/nginx/certs:ro
+      - ./certs/certificate.crt:/etc/nginx/certs/fullchain.pem:ro
+      - ./certs/private.key:/etc/nginx/certs/privkey.pem:ro
+      - ./certs/ca_bundle.crt:/etc/nginx/certs/chain.pem:ro
     healthcheck:
       test: ["CMD", "sh", "-c", "wget --quiet --tries=1 --spider https://localhost:8443/health --no-check-certificate || wget --quiet --tries=1 --spider http://localhost:8080/health"]
       interval: 30s

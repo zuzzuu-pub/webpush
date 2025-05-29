@@ -1,24 +1,18 @@
+# Production stage with Nginx
 FROM nginx:alpine
 
-# Copy static files to nginx html directory
-COPY . /usr/share/nginx/html/
+# Copy built files from build stage (Vite outputs to 'dist')
+COPY --from=build /app/dist /usr/share/nginx/html
 
-# Copy custom nginx configuration
-COPY nginx.conf /etc/nginx/nginx.conf
+# Copy nginx configuration
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-# Create startup script
-RUN echo '#!/bin/sh' > /docker-entrypoint-custom.sh && \
-    echo 'if [ ! -f /etc/nginx/certs/fullchain.pem ]; then' >> /docker-entrypoint-custom.sh && \
-    echo '  echo "SSL certificates not found, starting with HTTP fallback on port 8080"' >> /docker-entrypoint-custom.sh && \
-    echo '  sed -i "s/listen 8443 ssl;/listen 8080;/" /etc/nginx/nginx.conf' >> /docker-entrypoint-custom.sh && \
-    echo '  sed -i "s/http2 on;//" /etc/nginx/nginx.conf' >> /docker-entrypoint-custom.sh && \
-    echo '  sed -i "/ssl_/d" /etc/nginx/nginx.conf' >> /docker-entrypoint-custom.sh && \
-    echo 'fi' >> /docker-entrypoint-custom.sh && \
-    echo 'exec "$@"' >> /docker-entrypoint-custom.sh && \
-    chmod +x /docker-entrypoint-custom.sh
+# Create directory for SSL certificates
+RUN mkdir -p /etc/nginx/certs
 
-# Expose both ports
-EXPOSE 8443 8080
+# Expose ports
+EXPOSE 8080
+EXPOSE 8443
 
-ENTRYPOINT ["/docker-entrypoint-custom.sh"]
+# Start Nginx server
 CMD ["nginx", "-g", "daemon off;"]
