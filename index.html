@@ -338,12 +338,22 @@
             updateStatus('Connecting...', 'connecting');
             
             // Determine WebSocket URL based on environment
-            const isProduction = window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
-            const wsUrl = isProduction 
-                ? 'wss://vibte.xyz/api/v1/ws'
-                : 'ws://localhost:8001/api/v1/ws';
+            const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+            const isDevelopment = isLocalhost && window.location.port === '8443';
             
-            console.log(`Environment: ${isProduction ? 'production' : 'development'}, WebSocket URL: ${wsUrl}`);
+            let wsUrl;
+            if (isDevelopment) {
+                // Docker development environment
+                wsUrl = 'ws://localhost:8001/api/v1/ws';
+            } else if (isLocalhost) {
+                // Local development
+                wsUrl = 'ws://localhost:8001/api/v1/ws';
+            } else {
+                // Production
+                wsUrl = 'wss://vibte.xyz/api/v1/ws';
+            }
+            
+            console.log(`Environment: ${isDevelopment ? 'docker-dev' : (isLocalhost ? 'local-dev' : 'production')}, WebSocket URL: ${wsUrl}`);
             
             if (navigator.serviceWorker.controller) {
                 console.log('Sending connect message to service worker');

@@ -1,18 +1,10 @@
-FROM node:18-alpine
+FROM nginx:alpine
 
-WORKDIR /app
+# Copy static files to nginx html directory
+COPY . /usr/share/nginx/html/
 
-# Copy package files
-COPY package*.json ./
+# Copy custom nginx configuration
+COPY nginx.conf /etc/nginx/nginx.conf
 
-# Install dependencies
-RUN npm ci --only=production
-
-# Copy application code
-COPY . .
-
-# Expose application port
-EXPOSE 3000
-
-# Start the application
-CMD ["npm", "start"]
+# Expose port 8443
+EXPOSE 8443

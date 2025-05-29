@@ -5,44 +5,16 @@ services:
     build: .
     container_name: webpush-app
     restart: unless-stopped
-    environment:
-      - NODE_ENV=production
-      - PORT=3000
-    volumes:
-      - ./logs:/app/logs
-    networks:
-      - webpush-network
-    healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-
-  nginx:
-    image: nginx:alpine
-    container_name: webpush-nginx
-    restart: unless-stopped
     ports:
       - "8443:8443"
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./nginx/ssl:/etc/nginx/ssl:ro
-      - ./logs/nginx:/var/log/nginx
-    depends_on:
-      app:
-        condition: service_healthy
-    networks:
-      - webpush-network
+      - ./logs:/var/log/nginx
     healthcheck:
-      test: ["CMD", "nginx", "-t"]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8443/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-
-networks:
-  webpush-network:
-    driver: bridge
+      start_period: 10s
 
 volumes:
   logs:

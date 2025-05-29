@@ -1,0 +1,273 @@
+I'll help you create a Docker Compose setup with Dockerfile and Nginx configuration to run your application on port 8443 with WebSocket support.
+
+## Solution Steps:
+1. Create a Dockerfile for your application
+2. Create an Nginx configuration with WebSocket proxy support
+3. Create a Docker Compose file to orchestrate the services
+4. Configure SSL/TLS for port 8443
+
+### [Dockerfile](file:///c%3A/WORK/Sarente/zuzzuu/webpush_notificaiotn_test/Dockerfile)
+
+Dockerfile for the main application with Node.js setup.
+
+````dockerfile
+FROM node:18-alpine
+
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install dependencies - use npm install if package-lock.json doesn't exist
+RUN if [ -f package-lock.json ]; then \
+        npm ci --omit=dev; \
+    else \
+        npm install --omit=dev; \
+    fi
+
+# Copy application code
+COPY . .
+
+# Expose application port
+EXPOSE 3000
+
+# Start the application
+CMD ["npm", "start"]
+````
+
+### [nginx.conf](file:///c%3A/WORK/Sarente/zuzzuu/webpush_notificaiotn_test/nginx/nginx.conf)
+
+Nginx configuration with WebSocket support and SSL on port 8443.
+
+````nginx
+
+
+Made changes.
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    upstream app {
+        server app:3000;
+    }
+
+    # Rate limiting
+    limit_req_zone $binary_remote_addr zone=api:10m rate=10r/s;
+
+    server {
+        listen 8443 ssl http2;
+        server_name localhost;
+
+        # SSL Configuration
+        ssl_certificate /etc/nginx/ssl/nginx.crt;
+        ssl_certificate_key /etc/nginx/ssl/nginx.key;
+        ssl_protocols TLSv1.2 TLSv1.3;
+        ssl_ciphers ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384;
+        ssl_prefer_server_ciphers off;
+
+        # Security headers
+        add_header X-Frame-Options DENY;
+        add_header X-Content-Type-Options nosniff;
+        add_header X-XSS-Protection "1; mode=block";
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+        # Gzip compression
+        gzip on;
+        gzip_vary on;
+        gzip_min_length 1024;
+        gzip_types text/plain text/css text/xml text/javascript application/javascript application/xml+rss application/json;
+
+        # WebSocket upgrade configuration
+        location / {
+            proxy_pass http://app;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_cache_bypass $http_upgrade;
+            proxy_read_timeout 86400;
+            proxy_send_timeout 86400;
+            
+            # Rate limiting
+            limit_req zone=api burst=20 nodelay;
+        }
+
+        # Health check endpoint
+        location /health {
+            proxy_pass http://app/health;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+    }
+}
+````
+
+### [generate-certs.sh](file:///c%3A/WORK/Sarente/zuzzuu/webpush_notificaiotn_test/nginx/ssl/generate-certs.sh)
+
+Script to generate self-signed SSL certificates for development.
+
+````bash
+
+
+Made changes.
+
+#!/bin/bash
+
+# Generate private key
+openssl genrsa -out nginx.key 2048
+
+# Generate certificate signing request
+openssl req -new -key nginx.key -out nginx.csr -subj "/C=US/ST=State/L=City/O=Organization/CN=localhost"
+
+# Generate self-signed certificate
+openssl x509 -req -days 365 -in nginx.csr -signkey nginx.key -out nginx.crt
+
+# Clean up CSR file
+rm nginx.csr
+
+echo "SSL certificates generated successfully!"
+````
+
+### [docker-compose.yml](file:///c%3A/WORK/Sarente/zuzzuu/webpush_notificaiotn_test/docker-compose.yml)
+
+Docker Compose configuration to orchestrate the application and Nginx.
+
+````yaml
+
+
+Made changes.
+
+version: '3.8'
+
+services:
+  app:
+    build: .
+    container_name: webpush-app
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - webpush-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  nginx:
+    image: nginx:alpine
+    container_name: webpush-nginx
+    restart: unless-stopped
+    ports:
+      - "8443:8443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - ./logs/nginx:/var/log/nginx
+    depends_on:
+      app:
+        condition: service_healthy
+    networks:
+      - webpush-network
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  webpush-network:
+    driver: bridge
+
+volumes:
+  logs:
+    driver: local
+````
+
+### [.dockerignore](file:///c%3A/WORK/Sarente/zuzzuu/webpush_notificaiotn_test/.dockerignore)
+
+Docker ignore file to exclude unnecessary files from the build context.
+
+````dockerignore
+
+
+Made changes.
+
+node_modules
+npm-debug.log
+.git
+.gitignore
+README.md
+.env
+.nyc_output
+coverage
+.docker
+docker-compose.yml
+Dockerfile
+nginx/
+logs/
+*.log
+.DS_Store
+Thumbs.db
+````
+
+### [setup.sh](file:///c%3A/WORK/Sarente/zuzzuu/webpush_notificaiotn_test/scripts/setup.sh)
+
+Setup script to initialize SSL certificates and start the services.
+
+````bash
+
+
+Made changes.
+
+#!/bin/bash
+
+# Create necessary directories
+mkdir -p nginx/ssl logs/nginx
+
+# Generate SSL certificates if they don't exist
+if [ ! -f "nginx/ssl/nginx.crt" ]; then
+    echo "Generating SSL certificates..."
+    cd nginx/ssl
+    chmod +x generate-certs.sh
+    ./generate-certs.sh
+    cd ../..
+fi
+
+# Build and start services
+echo "Building and starting services..."
+docker-compose up --build -d
+
+echo "Services started successfully!"
+echo "Application available at: https://localhost:8443"
+echo "Check logs with: docker-compose logs -f"
+````
+
+To use this setup:
+
+1. Run the setup script: `chmod +x scripts/setup.sh && ./scripts/setup.sh`
+2. Or manually:
+   - Generate SSL certificates: `cd nginx/ssl && chmod +x generate-certs.sh && ./generate-certs.sh`
+   - Start services: `docker-compose up --build -d`
+3. Access your application at `https://localhost:8443`
+
+The configuration includes:
+- WebSocket support with proper upgrade headers
+- SSL/TLS termination at Nginx
+- Health checks for both services
+- Rate limiting and security headers
+- Gzip compression
+- Proper logging setup
+
+Made changes.
