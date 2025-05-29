@@ -534,6 +534,40 @@ class ZuzzuuSubscriber {
       console.log('[ZuzzuuSubscriber]', ...args);
     }
   }
+  
+  /**
+   * Force re-registration (used when subscriber becomes invalid)
+   */
+  forceRegister() {
+    this.log('Force re-registration initiated');
+    
+    // Clear existing subscription data
+    localStorage.removeItem('zuzzuu_subscriber_id');
+    localStorage.removeItem('zuzzuu_notification_consent');
+    localStorage.removeItem('zuzzuu_notification_rejected');
+    
+    // Reset internal state
+    this.subscriberId = this.generateUUID();
+    this.isRegistering = false;
+    this.registrationComplete = false;
+    
+    // Store new subscriber ID
+    try {
+      localStorage.setItem('zuzzuu_subscriber_id', this.subscriberId);
+    } catch (e) {
+      this.log('Error saving new subscriber ID to localStorage:', e);
+    }
+    
+    // Check if we have permission
+    if (Notification.permission === 'granted') {
+      this.log('Permission already granted, proceeding with registration');
+      // Use existing handleConsent method
+      this.handleConsent();
+    } else {
+      this.log('No permission, showing consent dialog');
+      this.showConsentPopup();
+    }
+  }
 }
 
 // Initialize when DOM is loaded

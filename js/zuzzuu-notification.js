@@ -10,9 +10,14 @@ class ZuzzuuNotification {
     // Default Zuzzuu logo URL from environment variable or fallback
     const defaultLogoUrl = 'https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg';
     
+    // Determine environment and set appropriate URLs
+    const isProduction = window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
+    const baseUrl = isProduction ? 'https://vibte.xyz' : 'http://localhost:8001';
+    const wsProtocol = isProduction ? 'wss:' : 'ws:';
+    
     this.options = {
-      apiUrl: options.apiUrl || 'https://vibte.xyz/api/v1',
-      wsUrl: options.wsUrl || 'wss://vibte.xyz/api/v1/ws',
+      apiUrl: options.apiUrl || `${baseUrl}/api/v1`,
+      wsUrl: options.wsUrl || `${wsProtocol}//${isProduction ? 'vibte.xyz' : 'localhost:8001'}/api/v1/ws`,
       debug: options.debug || true, // Enable debug by default for testing
       autoConnect: options.autoConnect !== false,
       heartbeatInterval: options.heartbeatInterval || 30000, // 30 seconds
