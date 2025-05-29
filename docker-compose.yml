@@ -7,11 +7,12 @@ services:
     restart: unless-stopped
     ports:
       - "8443:8443"
+      - "8080:8080"
     volumes:
       - ./logs:/var/log/nginx
       - ./certs:/etc/nginx/certs:ro
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "https://localhost:8443/health", "--no-check-certificate"]
+      test: ["CMD", "sh", "-c", "wget --quiet --tries=1 --spider https://localhost:8443/health --no-check-certificate || wget --quiet --tries=1 --spider http://localhost:8080/health"]
       interval: 30s
       timeout: 10s
       retries: 3
