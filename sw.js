@@ -1,321 +1,326 @@
 /**
  * Zuzzuu Service Worker
- * Handles WebSocket connections and push notifications
+ * Handles background WebSocket connections and notifications
  */
 
-const CACHE_NAME = 'zuzzuu-v1';
-const urlsToCache = [
-  '/',
-  '/index.html',
-  '/js/zuzzuu-subscriber.js',
-  '/js/zuzzuu-notification.js',
-  '/favicon.ico'
-];
-
-// WebSocket connection management
-let ws = null;
-let subscriberId = null;
+let socket = null;
 let isConnected = false;
-let reconnectAttempts = 0;
-const maxReconnectAttempts = 5;
-const reconnectDelay = 5000;
+let subscriberId = null;
+let connectionInProgress = false;
+let lastConnectionAttempt = 0;
+const CONNECTION_COOLDOWN = 5000; // 5 seconds between connection attempts
 
-// Install event - cache resources
-self.addEventListener('install', event => {
-  console.log('[SW] Installing service worker');
-  event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then(cache => {
-        console.log('[SW] Caching app shell');
-        return cache.addAll(urlsToCache);
-      })
-      .then(() => {
-        console.log('[SW] Skip waiting');
-        return self.skipWaiting();
-      })
-  );
+// Service Worker event listeners
+self.addEventListener("install", function (event) {
+  console.log("[SW] Installing service worker");
+  self.skipWaiting();
 });
 
-// Activate event - clean up old caches
-self.addEventListener('activate', event => {
-  console.log('[SW] Activating service worker');
-  event.waitUntil(
-    caches.keys().then(cacheNames => {
-      return Promise.all(
-        cacheNames.map(cacheName => {
-          if (cacheName !== CACHE_NAME) {
-            console.log('[SW] Deleting old cache:', cacheName);
-            return caches.delete(cacheName);
-          }
-        })
-      );
-    }).then(() => {
-      console.log('[SW] Claiming clients');
-      return self.clients.claim();
-    })
-  );
+self.addEventListener("activate", function (event) {
+  console.log("[SW] Activating service worker");
+  event.waitUntil(self.clients.claim());
 });
 
-// Fetch event - serve from cache with network fallback
-self.addEventListener('fetch', event => {
-  event.respondWith(
-    caches.match(event.request)
-      .then(response => {
-        // Return cached version or fetch from network
-        return response || fetch(event.request);
-      })
-  );
-});
-
-// Message handling from main thread
-self.addEventListener('message', event => {
+// Listen for messages from main thread
+self.addEventListener("message", function (event) {
   const { type, data } = event.data;
-  console.log('[SW] Received message:', { type, data });
 
   switch (type) {
-    case 'CONNECT_WEBSOCKET':
-      handleConnectWebSocket(data, event.source);
+    case "CONNECT_WEBSOCKET":
+      connectWebSocket(
+        data.subscriberId,
+        data.wsUrl,
+        data.useAuth,
+        data.authToken
+      );
       break;
-    case 'DISCONNECT_WEBSOCKET':
-      handleDisconnectWebSocket(event.source);
+    case "DISCONNECT_WEBSOCKET":
+      disconnectWebSocket();
       break;
-    case 'SEND_MESSAGE':
-      handleSendMessage(data, event.source);
+    case "GET_CONNECTION_STATUS":
+      event.ports[0].postMessage({
+        type: "CONNECTION_STATUS",
+        connected: isConnected,
+        subscriberId: subscriberId,
+      });
       break;
-    default:
-      console.log('[SW] Unknown message type:', type);
   }
 });
 
-// Handle WebSocket connection
-function handleConnectWebSocket(data, source) {
-  const { subscriberId: newSubscriberId, wsUrl } = data;
-  
-  if (isConnected && subscriberId === newSubscriberId) {
-    console.log('[SW] Already connected to WebSocket for this subscriber');
-    source.postMessage({
-      type: 'WEBSOCKET_CONNECTED',
-      data: { subscriberId }
-    });
+function connectWebSocket(subId, wsUrl, useAuth = false, authToken = null) {
+  // Prevent duplicate connections
+  if (connectionInProgress) {
+    console.log("[SW] Connection already in progress, ignoring request");
     return;
   }
 
-  subscriberId = newSubscriberId;
-  
-  // Close existing connection if any
-  if (ws) {
-    ws.close();
+  if (isConnected && subscriberId === subId) {
+    console.log("[SW] Already connected to same subscriber, ignoring request");
+    notifyClients({ type: "WEBSOCKET_CONNECTED" });
+    return;
+  }
+
+  // Implement connection cooldown
+  const now = Date.now();
+  if (now - lastConnectionAttempt < CONNECTION_COOLDOWN) {
+    console.log("[SW] Connection cooldown active, ignoring request");
+    return;
+  }
+
+  lastConnectionAttempt = now;
+  connectionInProgress = true;
+  subscriberId = subId;
+
+  // Close existing connection if different subscriber
+  if (
+    socket &&
+    socket.readyState === WebSocket.OPEN &&
+    subscriberId !== subId
+  ) {
+    console.log("[SW] Closing existing connection for different subscriber");
+    socket.close();
   }
 
   try {
-    const fullWsUrl = `${wsUrl}/${subscriberId}`;
-    console.log('[SW] Connecting to WebSocket:', fullWsUrl);
-    
-    ws = new WebSocket(fullWsUrl);
-    
-    ws.onopen = () => {
-      console.log('[SW] WebSocket connected');
+    // Build WebSocket URL based on authentication requirements
+    let url;
+    if (useAuth && authToken) {
+      url = `${wsUrl}/auth/${subscriberId}?token=${encodeURIComponent(
+        authToken
+      )}`;
+      console.log(
+        "[SW] Connecting to authenticated WebSocket:",
+        url.replace(/token=[^&]+/, "token=***")
+      );
+    } else {
+      url = `${wsUrl}/${subscriberId}`;
+      console.log("[SW] Connecting to public WebSocket:", url);
+    }
+
+    socket = new WebSocket(url);
+
+    socket.onopen = function () {
+      console.log("[SW] WebSocket connected");
       isConnected = true;
-      reconnectAttempts = 0;
-      
+      connectionInProgress = false;
+
       // Store connection state
-      const connectionState = { connected: true, subscriberId };
-      source.postMessage({
-        type: 'STORE_CONNECTION_STATE',
-        data: connectionState
+      self.clients.matchAll().then((clients) => {
+        clients.forEach((client) => {
+          client.postMessage({
+            type: "STORE_CONNECTION_STATE",
+            data: {
+              connected: true,
+              subscriberId: subscriberId,
+              authenticated: useAuth,
+            },
+          });
+        });
       });
-      
-      source.postMessage({
-        type: 'WEBSOCKET_CONNECTED',
-        data: { subscriberId }
-      });
-      
-      // Send initial status
-      ws.send(JSON.stringify({
-        type: 'status_update',
-        status: 'online',
-        timestamp: new Date().toISOString()
-      }));
+
+      notifyClients({ type: "WEBSOCKET_CONNECTED" });
     };
-    
-    ws.onmessage = (event) => {
-      try {
-        const message = JSON.parse(event.data);
-        console.log('[SW] WebSocket message received:', message);
-        
-        if (message.type === 'notification') {
-          // Handle notification
-          handleNotification(message, source);
-        } else if (message.type === 'heartbeat_response') {
-          console.log('[SW] Heartbeat response received');
-        }
-      } catch (error) {
-        console.error('[SW] Error parsing WebSocket message:', error);
-      }
+
+    socket.onmessage = function (event) {
+      console.log("[SW] WebSocket message:", event.data);
+      handleWebSocketMessage(event);
     };
-    
-    ws.onclose = (event) => {
-      console.log('[SW] WebSocket closed:', event.code, event.reason);
+
+    socket.onclose = function (event) {
+      console.log("[SW] WebSocket disconnected:", event.code, event.reason);
       isConnected = false;
-      
-      // Store disconnected state
-      const connectionState = { connected: false, subscriberId: null };
-      source.postMessage({
-        type: 'STORE_CONNECTION_STATE',
-        data: connectionState
+      connectionInProgress = false;
+
+      // Handle authentication-specific close codes
+      if (event.code === 4001) {
+        console.log("[SW] Authentication failed - invalid token");
+        notifyClients({
+          type: "WEBSOCKET_AUTH_FAILED",
+          reason: "Invalid token",
+        });
+      } else if (event.code === 4002) {
+        console.log("[SW] Authentication failed - user not found");
+        notifyClients({
+          type: "WEBSOCKET_AUTH_FAILED",
+          reason: "User not found",
+        });
+      } else if (event.code === 4003) {
+        console.log("[SW] Authentication failed - unauthorized access");
+        notifyClients({
+          type: "WEBSOCKET_AUTH_FAILED",
+          reason: "Unauthorized access",
+        });
+      } else if (event.code === 4004) {
+        console.log("[SW] Subscriber not found");
+        notifyClients({
+          type: "WEBSOCKET_ERROR",
+          error: "Subscriber not found",
+        });
+      }
+
+      // Update stored connection state
+      self.clients.matchAll().then((clients) => {
+        clients.forEach((client) => {
+          client.postMessage({
+            type: "STORE_CONNECTION_STATE",
+            data: { connected: false, subscriberId: null },
+          });
+        });
       });
-      
-      source.postMessage({
-        type: 'WEBSOCKET_DISCONNECTED',
-        data: { code: event.code, reason: event.reason }
-      });
-      
-      // Attempt reconnection if not a clean close
-      if (event.code !== 1000 && event.code !== 1001 && reconnectAttempts < maxReconnectAttempts) {
+
+      notifyClients({ type: "WEBSOCKET_DISCONNECTED" });
+
+      // Only attempt to reconnect for unexpected disconnections (not auth errors)
+      if (event.code !== 1000 && event.code !== 1001 && event.code < 4000) {
+        console.log(
+          "[SW] Unexpected disconnection, will attempt reconnect after delay"
+        );
         setTimeout(() => {
-          reconnectAttempts++;
-          console.log(`[SW] Reconnecting attempt ${reconnectAttempts}/${maxReconnectAttempts}`);
-          handleConnectWebSocket(data, source);
-        }, reconnectDelay);
+          if (!isConnected && !connectionInProgress) {
+            connectWebSocket(
+              subscriberId,
+              wsUrl
+                .replace(`/${subscriberId}`, "")
+                .replace(`/auth/${subscriberId}`, ""),
+              useAuth,
+              authToken
+            );
+          }
+        }, 10000); // 10 second delay for reconnection
       }
     };
-    
-    ws.onerror = (error) => {
-      console.error('[SW] WebSocket error:', error);
-      source.postMessage({
-        type: 'WEBSOCKET_ERROR',
-        data: { error: 'WebSocket connection error' }
-      });
+
+    socket.onerror = function (error) {
+      console.error("[SW] WebSocket error:", error);
+      isConnected = false;
+      connectionInProgress = false;
+      notifyClients({ type: "WEBSOCKET_ERROR", error: error.message });
     };
-    
   } catch (error) {
-    console.error('[SW] Error creating WebSocket:', error);
-    source.postMessage({
-      type: 'WEBSOCKET_ERROR',
-      data: { error: error.message }
-    });
+    console.error("[SW] Error creating WebSocket:", error);
+    connectionInProgress = false;
   }
 }
 
-// Handle WebSocket disconnection
-function handleDisconnectWebSocket(source) {
-  console.log('[SW] Disconnecting WebSocket');
-  
-  if (ws) {
-    ws.close(1000, 'User disconnected');
-    ws = null;
+function disconnectWebSocket() {
+  connectionInProgress = false;
+
+  if (socket) {
+    socket.close(1000, "Service worker disconnect");
+    socket = null;
   }
-  
+
   isConnected = false;
   subscriberId = null;
-  reconnectAttempts = 0;
-  
-  // Store disconnected state
-  const connectionState = { connected: false, subscriberId: null };
-  source.postMessage({
-    type: 'STORE_CONNECTION_STATE',
-    data: connectionState
-  });
-  
-  source.postMessage({
-    type: 'WEBSOCKET_DISCONNECTED',
-    data: { code: 1000, reason: 'User disconnected' }
-  });
-}
 
-// Handle sending messages through WebSocket
-function handleSendMessage(data, source) {
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    try {
-      ws.send(JSON.stringify(data));
-      console.log('[SW] Message sent through WebSocket:', data);
-    } catch (error) {
-      console.error('[SW] Error sending message:', error);
-      source.postMessage({
-        type: 'WEBSOCKET_ERROR',
-        data: { error: 'Failed to send message' }
+  // Clear stored connection state
+  self.clients.matchAll().then((clients) => {
+    clients.forEach((client) => {
+      client.postMessage({
+        type: "STORE_CONNECTION_STATE",
+        data: { connected: false, subscriberId: null },
       });
-    }
-  } else {
-    console.warn('[SW] WebSocket not connected, cannot send message');
-    source.postMessage({
-      type: 'WEBSOCKET_ERROR',
-      data: { error: 'WebSocket not connected' }
     });
+  });
+}
+
+// Add missing broadcastToClients function
+function broadcastToClients(message) {
+  self.clients.matchAll().then((clients) => {
+    clients.forEach((client) => {
+      client.postMessage(message);
+    });
+  });
+}
+
+// Handle WebSocket messages
+function handleWebSocketMessage(event) {
+  try {
+    const data = JSON.parse(event.data);
+    console.log("[SW] WebSocket message received:", data);
+
+    if (data.type === "notification") {
+      // Forward notification to main thread
+      broadcastToClients({
+        type: "NOTIFICATION_RECEIVED",
+        data: data,
+      });
+
+      // Show browser notification if permission granted
+      if (self.Notification && self.Notification.permission === "granted") {
+        // Check for image_url in nested template if main image_url is null/empty
+        const imageUrl =
+          data.image_url || (data.template && data.template.image_url) || "";
+        const logoUrl =
+          data.logo_url ||
+          (data.template && data.template.logo_url) ||
+          "/favicon.ico";
+
+        const notificationOptions = {
+          body: data.message || "",
+          icon: logoUrl,
+          badge: logoUrl,
+          image: imageUrl,
+          tag: data.id || "zuzzuu-notification",
+          data: data,
+          requireInteraction: false,
+          silent: false,
+        };
+
+        self.registration.showNotification(
+          data.title || "New Notification",
+          notificationOptions
+        );
+      }
+    } else if (data.type === "connection_established") {
+      console.log("[SW] WebSocket connection established");
+      broadcastToClients({
+        type: "WEBSOCKET_CONNECTED",
+        data: { subscriberId: subscriberId },
+      });
+    } else if (data.type === "heartbeat_response") {
+      console.log("[SW] Heartbeat response received");
+    } else if (data.type === "echo") {
+      console.log("[SW] Echo response received:", data);
+    }
+  } catch (error) {
+    console.error("[SW] Error handling WebSocket message:", error);
   }
 }
 
-// Handle incoming notifications
-function handleNotification(notification, source) {
-  console.log('[SW] Handling notification:', notification);
-  
-  // Send notification to main thread
-  source.postMessage({
-    type: 'NOTIFICATION_RECEIVED',
-    data: notification
-  });
-  
-  // Show push notification if permission granted
-  if (self.Notification && self.Notification.permission === 'granted') {
-    const options = {
-      body: notification.message,
-      icon: notification.logo_url || notification.image_url || '/favicon.ico',
-      badge: notification.logo_url || '/favicon.ico',
-      tag: notification.id || 'zuzzuu-notification',
-      data: notification,
-      requireInteraction: false,
-      silent: false
-    };
-    
-    if (notification.image_url) {
-      options.image = notification.image_url;
-    }
-    
-    self.registration.showNotification(
-      notification.title || 'New Notification',
-      options
-    );
-  }
+function showNotification(data) {
+  // Check for image_url in nested template if main image_url is null/empty
+  const logoUrl =
+    data.logo_url ||
+    (data.template && data.template.logo_url) ||
+    "https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg";
+  const imageUrl =
+    data.image_url || (data.template && data.template.image_url) || "";
+
+  const title = data.title || "New Notification";
+  const options = {
+    body: data.message || "",
+    icon: logoUrl,
+    badge:
+      "https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg",
+    image: imageUrl,
+    tag: data.id || "zuzzuu-notification",
+    data: data,
+    requireInteraction: true,
+  };
+
+  self.registration.showNotification(title, options);
+}
+
+function notifyClients(message) {
+  broadcastToClients(message);
 }
 
 // Handle notification click
-self.addEventListener('notificationclick', event => {
-  console.log('[SW] Notification clicked:', event.notification);
-  
+self.addEventListener("notificationclick", function (event) {
   event.notification.close();
-  
-  const notification = event.notification.data;
-  
-  // Open URL if provided
-  if (notification && notification.url) {
-    event.waitUntil(
-      clients.openWindow(notification.url)
-    );
-  } else {
-    // Focus existing window or open new one
-    event.waitUntil(
-      clients.matchAll({ type: 'window' }).then(clientList => {
-        if (clientList.length > 0) {
-          return clientList[0].focus();
-        }
-        return clients.openWindow('/');
-      })
-    );
-  }
-});
 
-// Handle push events (for future push notification support)
-self.addEventListener('push', event => {
-  console.log('[SW] Push event received:', event);
-  
-  if (event.data) {
-    try {
-      const notification = event.data.json();
-      handleNotification(notification, null);
-    } catch (error) {
-      console.error('[SW] Error parsing push data:', error);
-    }
-  }
-});
+  const data = event.notification.data;
 
-console.log('[SW] Service Worker loaded');
+  event.waitUntil(self.clients.openWindow(data.url || "/"));
+});
