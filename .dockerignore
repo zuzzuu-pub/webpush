@@ -4,11 +4,19 @@ README.md
 .env
 docker-compose.yml
 Dockerfile
-nginx/nginx.conf
-nginx/ssl/
 logs/
 *.log
 .DS_Store
 Thumbs.db
 node_modules/
 package*.json
+.vscode/
+doc.txt
+scripts/
+# Ensure these files are included:
+# !sw.js
+# !favicon.ico
+# !favicon.svg
+# !js/
+# !css/
+# !index.html

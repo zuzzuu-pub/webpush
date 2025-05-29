@@ -8,8 +8,8 @@
 class ZuzzuuSubscriber {
   constructor(options = {}) {
     this.options = {
-      apiUrl: options.apiUrl || 'http://localhost:8001/api/v1/subscriber',
-      pubRegisterUrl: options.pubRegisterUrl || 'http://localhost:8001/pub/register',
+      apiUrl: options.apiUrl || 'https://vibte.xyz/api/v1/subscriber',
+      pubRegisterUrl: options.pubRegisterUrl || 'https://vibte.xyz/pub/register',
       debug: options.debug || false,
       autoShowConsent: options.autoShowConsent !== false,
       consentDelay: options.consentDelay || 2000,

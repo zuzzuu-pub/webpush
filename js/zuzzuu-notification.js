@@ -11,8 +11,8 @@ class ZuzzuuNotification {
     const defaultLogoUrl = 'https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg';
     
     this.options = {
-      apiUrl: options.apiUrl || 'http://localhost:8001/api/v1',
-      wsUrl: options.wsUrl || 'ws://localhost:8001/api/v1/ws',
+      apiUrl: options.apiUrl || 'https://vibte.xyz/api/v1',
+      wsUrl: options.wsUrl || 'wss://vibte.xyz/api/v1/ws',
       debug: options.debug || true, // Enable debug by default for testing
       autoConnect: options.autoConnect !== false,
       heartbeatInterval: options.heartbeatInterval || 30000, // 30 seconds
