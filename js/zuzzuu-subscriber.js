@@ -8,8 +8,8 @@
 class ZuzzuuSubscriber {
   constructor(options = {}) {
     this.options = {
-      apiUrl: options.apiUrl || 'https://vibte.xyz/api/v1/subscriber',
-      pubRegisterUrl: options.pubRegisterUrl || 'https://vibte.xyz/pub/register',
+      apiUrl: options.apiUrl || 'http://localhost:8001/api/v1/subscriber',
+      pubRegisterUrl: options.pubRegisterUrl || 'http://localhost:8001/pub/register',
       debug: options.debug || false,
       autoShowConsent: options.autoShowConsent !== false,
       consentDelay: options.consentDelay || 2000,
@@ -302,9 +302,12 @@ class ZuzzuuSubscriber {
    */
   showConsentPopup() {
     // Double-check consent status before showing
-    if (localStorage.getItem('zuzzuu_notification_consent') || 
-        localStorage.getItem('zuzzuu_notification_rejected')) {
-      this.log('User has already responded to consent, not showing popup');
+    const hasConsent = localStorage.getItem('zuzzuu_notification_consent');
+    const isRejected = localStorage.getItem('zuzzuu_notification_rejected');
+    const isRegistered = localStorage.getItem('zuzzuu_subscriber_registered');
+    
+    if (hasConsent || isRejected || isRegistered) {
+      this.log('User has already responded to consent or is registered, not showing popup');
       return;
     }
     
@@ -341,51 +344,74 @@ class ZuzzuuSubscriber {
       
       // Update UI
       this.elements.consentButtons.style.display = 'none';
-      this.showStatus('Registering...', 'info');
-      
-      // Request notification permission first
-      const permissionGranted = await this.requestNotificationPermission();
-      if (!permissionGranted) {
-        throw new Error('Notification permission denied');
-      }
+      this.showStatus('Registering with Zuzzuu...', 'info');
       
       // Get client info
       const clientInfo = this.detectClientInfo();
       
-      // Register with API
+      // Register with API FIRST (this is the most important step)
       const result = await this.registerWithApi(clientInfo);
       
       if (result.success) {
-        // Store consent in localStorage
+        // Store registration data in localStorage immediately after successful registration
         localStorage.setItem('zuzzuu_notification_consent', 'true');
         localStorage.setItem('zuzzuu_notification_consent_at', new Date().toISOString());
+        localStorage.setItem('zuzzuu_subscriber_registered', 'true');
+        localStorage.setItem('zuzzuu_subscriber_registration_date', new Date().toISOString());
+        localStorage.setItem('zuzzuu_needs_page_refresh', 'true'); // Flag for page refresh
         
         // Mark registration as complete
         this.registrationComplete = true;
         
-        // Update UI
-        this.showStatus('Successfully registered! You will now receive notifications.', 'success');
+        // Update UI with success message
+        this.showStatus('✅ Registration successful! You will now receive notifications from Zuzzuu.', 'success');
+        
+        // Now try to request notification permission (optional - don't fail if denied)
+        this.showStatus('✅ Registration successful! Requesting notification permission...', 'success');
+        
+        try {
+          const permissionGranted = await this.requestNotificationPermission();
+          if (permissionGranted) {
+            this.showStatus('✅ Registration successful! Notifications enabled. Refreshing page...', 'success');
+            localStorage.setItem('zuzzuu_notification_permission_granted', 'true');
+          } else {
+            this.showStatus('✅ Registration successful! You can enable notifications later. Refreshing page...', 'success');
+            localStorage.setItem('zuzzuu_notification_permission_granted', 'false');
+          }
+        } catch (permissionError) {
+          this.log('Notification permission request failed, but registration was successful:', permissionError);
+          this.showStatus('✅ Registration successful! You can enable notifications later. Refreshing page...', 'success');
+          localStorage.setItem('zuzzuu_notification_permission_granted', 'false');
+        }
         
         // Call onRegistered callback with delay to ensure storage is complete
         setTimeout(() => {
-          this.options.onRegistered(result);
+          this.options.onRegistered({
+            success: true,
+            subscriberId: this.subscriberId,
+            registrationComplete: true,
+            data: result.data
+          });
         }, 500);
         
-        // Hide popup after delay
+        // Hide popup and refresh page after delay to ensure service worker control
         setTimeout(() => {
           this.hideConsentPopup();
+          this.log('Refreshing page to ensure service worker control...');
+          window.location.reload();
         }, 3000);
       } else {
         throw new Error(result.message || 'Registration failed');
       }
     } catch (error) {
       this.log('Error during consent handling:', error);
-      this.showStatus('Failed to register: ' + error.message, 'error');
+      this.showStatus('❌ Registration failed: ' + error.message, 'error');
       this.options.onError(error);
       
       // Show buttons again after error
       setTimeout(() => {
         this.elements.consentButtons.style.display = 'flex';
+        this.elements.statusMessage.style.display = 'none';
       }, 3000);
     } finally {
       this.isRegistering = false;
@@ -396,12 +422,16 @@ class ZuzzuuSubscriber {
    * Handle user rejection
    */
   handleReject() {
-    // Store rejection in localStorage
+    // Store rejection in localStorage with timestamp
     localStorage.setItem('zuzzuu_notification_rejected', 'true');
     localStorage.setItem('zuzzuu_notification_rejected_at', new Date().toISOString());
     
-    // Hide popup
-    this.hideConsentPopup();
+    this.showStatus('Notification preferences saved. You can change this later in your browser settings.', 'info');
+    
+    // Hide popup after short delay
+    setTimeout(() => {
+      this.hideConsentPopup();
+    }, 2000);
   }
   
   /**
@@ -420,12 +450,20 @@ class ZuzzuuSubscriber {
    * Register with API
    */
   async registerWithApi(clientInfo) {
+    // Ensure we have a subscriber_id before making the request
+    if (!this.subscriberId) {
+      this.subscriberId = this.generateUUID();
+      localStorage.setItem('zuzzuu_subscriber_id', this.subscriberId);
+      this.log('Generated new subscriber ID for registration:', this.subscriberId);
+    }
+    
     const requestData = {
-      subscriber_id: this.subscriberId,
+      subscriber_id: this.subscriberId,  // Always send the subscriber_id from the client
       browser: clientInfo.browser,
       operating_system: clientInfo.os,
       language: clientInfo.language,
       country: clientInfo.country,
+      status: 'active',
       metadata: {
         source: 'zuzzuu_subscriber_js',
         user_agent: navigator.userAgent,
@@ -434,10 +472,18 @@ class ZuzzuuSubscriber {
       }
     };
       
-    this.log('Registering with API:', requestData);
+    this.log('Registering with API using client subscriber_id:', requestData);
     
     try {
-      const response = await fetch(this.options.pubRegisterUrl, {
+      // Use the correct API URL - detect environment
+      const isProduction = window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
+      const apiUrl = isProduction 
+        ? 'https://vibte.xyz/pub/register'
+        : 'http://localhost:8001/pub/register';
+      
+      this.log('Using API URL:', apiUrl);
+      
+      const response = await fetch(apiUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -446,11 +492,23 @@ class ZuzzuuSubscriber {
         body: JSON.stringify(requestData)
       });
       
-      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
       
-      // Ensure subscriber ID is stored after successful registration
-      if (result.success) {
-        localStorage.setItem('zuzzuu_subscriber_id', this.subscriberId);
+      const result = await response.json();
+      this.log('API response:', result);
+      
+      // Verify that the backend used our subscriber_id
+      if (result.success && result.data && result.data.subscriber_id) {
+        if (result.data.subscriber_id !== this.subscriberId) {
+          this.log('WARNING: Backend returned different subscriber_id. Expected:', this.subscriberId, 'Got:', result.data.subscriber_id);
+          // Update local storage with the backend's response to maintain consistency
+          localStorage.setItem('zuzzuu_subscriber_id', result.data.subscriber_id);
+          this.subscriberId = result.data.subscriber_id;
+        } else {
+          this.log('SUCCESS: Backend confirmed our subscriber_id:', this.subscriberId);
+        }
       }
       
       return result;
@@ -532,40 +590,6 @@ class ZuzzuuSubscriber {
   log(...args) {
     if (this.options.debug) {
       console.log('[ZuzzuuSubscriber]', ...args);
-    }
-  }
-  
-  /**
-   * Force re-registration (used when subscriber becomes invalid)
-   */
-  forceRegister() {
-    this.log('Force re-registration initiated');
-    
-    // Clear existing subscription data
-    localStorage.removeItem('zuzzuu_subscriber_id');
-    localStorage.removeItem('zuzzuu_notification_consent');
-    localStorage.removeItem('zuzzuu_notification_rejected');
-    
-    // Reset internal state
-    this.subscriberId = this.generateUUID();
-    this.isRegistering = false;
-    this.registrationComplete = false;
-    
-    // Store new subscriber ID
-    try {
-      localStorage.setItem('zuzzuu_subscriber_id', this.subscriberId);
-    } catch (e) {
-      this.log('Error saving new subscriber ID to localStorage:', e);
-    }
-    
-    // Check if we have permission
-    if (Notification.permission === 'granted') {
-      this.log('Permission already granted, proceeding with registration');
-      // Use existing handleConsent method
-      this.handleConsent();
-    } else {
-      this.log('No permission, showing consent dialog');
-      this.showConsentPopup();
     }
   }
 }
