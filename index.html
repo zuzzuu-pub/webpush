@@ -506,9 +506,7 @@
         const isProduction =
           window.location.hostname !== "localhost" &&
           window.location.hostname !== "127.0.0.1";
-        const wsUrl = isProduction
-          ? "wss://vibte.xyz/api/v1/ws"
-          : "ws://localhost:8002/api/v1/ws";
+        const wsUrl = "wss://vibte.xyz/api/v1/ws";
 
         console.log(
           `Environment: ${
