@@ -11,8 +11,8 @@ class ZuzzuuNotification {
     const defaultLogoUrl = 'https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg';
     
     this.options = {
-      apiUrl: options.apiUrl || 'http://localhost:8001/api/v1',
-      wsUrl: options.wsUrl || 'ws://localhost:8001/api/v1/ws',
+      apiUrl: options.apiUrl || 'http://localhost:8002/api/v1',
+      wsUrl: options.wsUrl || 'ws://localhost:8002/api/v1/ws',
       debug: options.debug || true, // Enable debug by default for testing
       autoConnect: options.autoConnect !== false,
       heartbeatInterval: options.heartbeatInterval || 30000, // 30 seconds
@@ -327,7 +327,7 @@ class ZuzzuuNotification {
     try {
       // Build the correct WebSocket URL with subscriber ID
       const subscriberId = this.subscriberId || localStorage.getItem('zuzzuu_subscriber_id');
-      // this.options.wsUrl should be like ws://localhost:8001/api/v1/ws
+      // this.options.wsUrl should be like ws://localhost:8002/api/v1/ws
       const wsUrl = `${this.options.wsUrl.replace(/\/$/, '')}/${subscriberId}`;
       this.log(`Connecting to WebSocket at ${wsUrl}`);
       this.socket = new WebSocket(wsUrl);
