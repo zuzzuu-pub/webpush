@@ -8,8 +8,8 @@
 class ZuzzuuSubscriber {
   constructor(options = {}) {
     this.options = {
-      apiUrl: options.apiUrl || 'http://localhost:8001/api/v1/subscriber',
-      pubRegisterUrl: options.pubRegisterUrl || 'http://localhost:8001/pub/register',
+      apiUrl: options.apiUrl || 'http://localhost:8002/api/v1/subscriber',
+      pubRegisterUrl: options.pubRegisterUrl || 'http://localhost:8002/api/v1/public/register',
       debug: options.debug || false,
       autoShowConsent: options.autoShowConsent !== false,
       consentDelay: options.consentDelay || 2000,
@@ -475,13 +475,12 @@ class ZuzzuuSubscriber {
     this.log('Registering with API using client subscriber_id:', requestData);
     
     try {
+      // Use the correct API URL from options
       // Use the correct API URL - detect environment
       const isProduction = window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
       const apiUrl = isProduction 
-        ? 'https://vibte.xyz/pub/register'
-        : 'http://localhost:8001/pub/register';
-      
-      this.log('Using API URL:', apiUrl);
+        ? 'https://vibte.xyz/api/v1/public/register'
+        : 'http://localhost:8002/api/v1/public/register';      this.log('Using API URL:', apiUrl);
       
       const response = await fetch(apiUrl, {
         method: 'POST',
@@ -616,6 +615,10 @@ if (typeof window !== 'undefined') {
   });
 }
 
+// Export for module usage
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = ZuzzuuSubscriber;
+}
 // Export for module usage
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = ZuzzuuSubscriber;
