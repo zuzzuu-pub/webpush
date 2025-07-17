@@ -1,511 +1,634 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Zuzzuu WebSocket Status</title>
     <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            margin: 0;
-            padding: 20px;
-            background-color: #f5f5f5;
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          sans-serif;
+        margin: 0;
+        padding: 20px;
+        background-color: #f5f5f5;
+      }
+
+      .container {
+        max-width: 600px;
+        margin: 0 auto;
+        background: white;
+        padding: 30px;
+        border-radius: 8px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+      }
+
+      .status {
+        padding: 15px;
+        border-radius: 5px;
+        margin: 10px 0;
+        font-weight: bold;
+      }
+
+      .status.connected {
+        background-color: #d4edda;
+        color: #155724;
+        border: 1px solid #c3e6cb;
+      }
+
+      .status.disconnected {
+        background-color: #f8d7da;
+        color: #721c24;
+        border: 1px solid #f5c6cb;
+      }
+
+      .status.connecting {
+        background-color: #fff3cd;
+        color: #856404;
+        border: 1px solid #ffeaa7;
+      }
+
+      .btn {
+        padding: 10px 20px;
+        margin: 5px;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 14px;
+      }
+
+      .btn-primary {
+        background-color: #007bff;
+        color: white;
+      }
+
+      .btn-danger {
+        background-color: #dc3545;
+        color: white;
+      }
+
+      .info {
+        background-color: #e9ecef;
+        padding: 15px;
+        border-radius: 5px;
+        margin: 15px 0;
+      }
+
+      @keyframes fadeInScale {
+        from {
+          opacity: 0;
+          transform: scale(0.95);
         }
-        
-        .container {
-            max-width: 600px;
-            margin: 0 auto;
-            background: white;
-            padding: 30px;
-            border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        to {
+          opacity: 1;
+          transform: scale(1);
         }
-        
-        .status {
-            padding: 15px;
-            border-radius: 5px;
-            margin: 10px 0;
-            font-weight: bold;
-        }
-        
-        .status.connected {
-            background-color: #d4edda;
-            color: #155724;
-            border: 1px solid #c3e6cb;
-        }
-        
-        .status.disconnected {
-            background-color: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
-        }
-        
-        .status.connecting {
-            background-color: #fff3cd;
-            color: #856404;
-            border: 1px solid #ffeaa7;
-        }
-        
-        .btn {
-            padding: 10px 20px;
-            margin: 5px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 14px;
-        }
-        
-        .btn-primary {
-            background-color: #007bff;
-            color: white;
-        }
-        
-        .btn-danger {
-            background-color: #dc3545;
-            color: white;
-        }
-        
-        .info {
-            background-color: #e9ecef;
-            padding: 15px;
-            border-radius: 5px;
-            margin: 15px 0;
-        }
-        
-        @keyframes fadeInScale {
-            from {
-                opacity: 0;
-                transform: scale(0.95);
-            }
-            to {
-                opacity: 1;
-                transform: scale(1);
-            }
-        }
+      }
     </style>
-</head>
-<body>
+  </head>
+  <body>
     <div class="container">
-        <h1>Zuzzuu WebSocket Connection Status</h1>
-        
-        <div id="status" class="status connecting">
-            Initializing...
-        </div>
-        
-        <div class="info">
-            <strong>Subscriber ID:</strong> <span id="subscriber-id">Loading...</span><br>
-            <strong>Service Worker:</strong> <span id="sw-status">Checking...</span>
-        </div>
-        
-        <div>
-            <button id="connect-btn" class="btn btn-primary">Connect</button>
-            <button id="disconnect-btn" class="btn btn-danger">Disconnect</button>
-        </div>
-        
-        <div id="notifications" style="margin-top: 20px;">
-            <h3>Recent Notifications:</h3>
-            <div id="notification-list"></div>
-        </div>
+      <h1>Zuzzuu WebSocket Connection Status</h1>
+
+      <div id="status" class="status connecting">Initializing...</div>
+
+      <div class="info">
+        <strong>Subscriber ID:</strong>
+        <span id="subscriber-id">Loading...</span><br />
+        <strong>Service Worker:</strong> <span id="sw-status">Checking...</span>
+      </div>
+
+      <div>
+        <button id="connect-btn" class="btn btn-primary">Connect</button>
+        <button id="disconnect-btn" class="btn btn-danger">Disconnect</button>
+      </div>
+
+      <div id="notifications" style="margin-top: 20px">
+        <h3>Recent Notifications:</h3>
+        <div id="notification-list"></div>
+      </div>
     </div>
 
     <script src="js/zuzzuu-subscriber.js"></script>
     <script src="js/zuzzuu-notification.js"></script>
-    
+
     <script>
-        let serviceWorker = null;
-        let zuzzuuSubscriber = null;
-        let subscriberId = null;
-        let isConnecting = false;
-        let connectionAttempted = false;
-        let serviceWorkerReady = false;
-        let wsConnectionState = { connected: false, subscriberId: null };
-        
-        // Initialize ZuzzuuNotification after service worker is ready
-        let zuzzuuNotification = null;
-        
-        document.addEventListener('DOMContentLoaded', async function() {
-            // Check if we just refreshed after registration
-            const needsRefresh = localStorage.getItem('zuzzuu_needs_page_refresh');
-            if (needsRefresh) {
-                localStorage.removeItem('zuzzuu_needs_page_refresh');
-                console.log('Page refreshed after registration - should now have service worker control');
-            }
-            
-            // Get subscriber ID first
-            subscriberId = localStorage.getItem('zuzzuu_subscriber_id');
-            document.getElementById('subscriber-id').textContent = subscriberId || 'Not found';
-            
-            // Load stored connection state
-            const storedConnectionState = localStorage.getItem('zuzzuu_ws_connection_state');
-            if (storedConnectionState) {
-                try {
-                    wsConnectionState = JSON.parse(storedConnectionState);
-                } catch (e) {
-                    console.log('Error parsing stored connection state:', e);
-                }
-            }
-            
-            // Check user consent and registration status
-            const hasConsent = localStorage.getItem('zuzzuu_notification_consent');
-            const isRejected = localStorage.getItem('zuzzuu_notification_rejected');
-            const isRegistered = localStorage.getItem('zuzzuu_subscriber_registered');
-            
-            console.log('Registration status:', { hasConsent, isRejected, isRegistered, subscriberId, needsRefresh });
-            
-            // Initialize subscriber system only if not already registered
-            zuzzuuSubscriber = new ZuzzuuSubscriber({
-                debug: true,
-                autoShowConsent: !hasConsent && !isRejected && !isRegistered, // Only show if no previous response
-                consentDelay: 2000,
-                onRegistered: function(result) {
-                    console.log('Subscriber registered successfully:', result);
-                    updateStatus('✅ Subscriber registered! Page will refresh to connect WebSocket...', 'connecting');
-                    
-                    // Update subscriber ID after registration
-                    subscriberId = localStorage.getItem('zuzzuu_subscriber_id');
-                    document.getElementById('subscriber-id').textContent = subscriberId;
-                    
-                    // Note: Page will refresh automatically from the subscriber class
-                },
-                onError: function(error) {
-                    console.error('Subscriber registration failed:', error);
-                    updateStatus('❌ Registration failed: ' + error.message, 'disconnected');
-                }
-            });
-            
-            // Register service worker
-            if ('serviceWorker' in navigator) {
-                try {
-                    // Register service worker with more explicit scope
-                    const registration = await navigator.serviceWorker.register('./sw.js', {
-                        scope: './',
-                        updateViaCache: 'none' // Ensure we get the latest version
-                    });
-                    console.log('Service Worker registered:', registration);
-                    document.getElementById('sw-status').textContent = 'Registered';
-                    
-                    // Wait for service worker to be ready
-                    await navigator.serviceWorker.ready;
-                    console.log('Service Worker ready');
-                    
-                    // Handle service worker updates
-                    registration.addEventListener('updatefound', () => {
-                        console.log('Service Worker update found');
-                        const newWorker = registration.installing;
-                        newWorker.addEventListener('statechange', () => {
-                            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                                console.log('New service worker installed, will reload page');
-                                window.location.reload();
-                            }
-                        });
-                    });
-                    
-                    // Ensure we have an active service worker with proper control
-                    serviceWorker = navigator.serviceWorker.controller || registration.active;
-                    
-                    if (!serviceWorker) {
-                        console.log('No service worker controller available yet');
-                        if (registration.active) {
-                            console.log('Service worker is active but not controlling, claiming clients...');
-                            // Force the service worker to claim this client
-                            registration.active.postMessage({ type: 'CLAIM_CLIENTS' });
-                            
-                            // Wait a bit and check again
-                            setTimeout(() => {
-                                if (!navigator.serviceWorker.controller) {
-                                    console.log('Still no service worker control, reloading page...');
-                                    window.location.reload();
-                                } else {
-                                    serviceWorker = navigator.serviceWorker.controller;
-                                    serviceWorkerReady = true;
-                                    console.log('Service worker control established after claim');
-                                    proceedWithConnection();
-                                }
-                            }, 1000);
-                        } else {
-                            console.log('No active service worker, reloading page...');
-                            window.location.reload();
-                        }
-                        return;
-                    }
-                    
-                    serviceWorkerReady = true;
-                    console.log('Service Worker is ready and controlling');
-                    
-                    // Listen for messages from service worker
-                    navigator.serviceWorker.addEventListener('message', handleServiceWorkerMessage);
-                    
-                    // Proceed with connection logic
-                    proceedWithConnection();
-                    
-                } catch (error) {
-                    console.error('Service Worker registration failed:', error);
-                    document.getElementById('sw-status').textContent = 'Failed to register';
-                    updateStatus('Service Worker registration failed', 'disconnected');
-                }
-            } else {
-                document.getElementById('sw-status').textContent = 'Not supported';
-                updateStatus('Service Workers not supported', 'disconnected');
-            }
-            
-            // Initialize notification system after everything is set up
-            if (!zuzzuuNotification) {
-                zuzzuuNotification = new ZuzzuuNotification({
-                    debug: true,
-                    autoConnect: false, // We'll manage connection manually
-                    onNotificationClick: function(data) {
-                        console.log('Notification clicked:', data);
-                    },
-                    onConnectionChange: function(connected) {
-                        console.log('Notification connection changed:', connected);
-                    }
-                });
-            }
-            
-            // Button event listeners
-            document.getElementById('connect-btn').addEventListener('click', connectWebSocket);
-            document.getElementById('disconnect-btn').addEventListener('click', disconnectWebSocket);
+      let serviceWorker = null;
+      let zuzzuuSubscriber = null;
+      let subscriberId = null;
+      let isConnecting = false;
+      let connectionAttempted = false;
+      let serviceWorkerReady = false;
+      let wsConnectionState = { connected: false, subscriberId: null };
+
+      // Initialize ZuzzuuNotification after service worker is ready
+      let zuzzuuNotification = null;
+
+      document.addEventListener("DOMContentLoaded", async function () {
+        // Check if we just refreshed after registration
+        const needsRefresh = localStorage.getItem("zuzzuu_needs_page_refresh");
+        if (needsRefresh) {
+          localStorage.removeItem("zuzzuu_needs_page_refresh");
+          console.log(
+            "Page refreshed after registration - should now have service worker control"
+          );
+        }
+
+        // Get subscriber ID first
+        subscriberId = localStorage.getItem("zuzzuu_subscriber_id");
+        document.getElementById("subscriber-id").textContent =
+          subscriberId || "Not found";
+
+        // Load stored connection state
+        const storedConnectionState = localStorage.getItem(
+          "zuzzuu_ws_connection_state"
+        );
+        if (storedConnectionState) {
+          try {
+            wsConnectionState = JSON.parse(storedConnectionState);
+          } catch (e) {
+            console.log("Error parsing stored connection state:", e);
+          }
+        }
+
+        // Check user consent and registration status
+        const hasConsent = localStorage.getItem("zuzzuu_notification_consent");
+        const isRejected = localStorage.getItem("zuzzuu_notification_rejected");
+        const isRegistered = localStorage.getItem(
+          "zuzzuu_subscriber_registered"
+        );
+
+        console.log("Registration status:", {
+          hasConsent,
+          isRejected,
+          isRegistered,
+          subscriberId,
+          needsRefresh,
         });
-        
-        function proceedWithConnection() {
-            const hasConsent = localStorage.getItem('zuzzuu_notification_consent');
-            const isRejected = localStorage.getItem('zuzzuu_notification_rejected');
-            const isRegistered = localStorage.getItem('zuzzuu_subscriber_registered');
-            
-            // Determine if we should auto-connect
-            if (wsConnectionState.connected && wsConnectionState.subscriberId === subscriberId) {
-                console.log('Found existing connection state for current subscriber');
-                updateStatus('✅ Connected to WebSocket - Ready to receive notifications!', 'connected');
-                connectionAttempted = true;
-            } else if (subscriberId && hasConsent && isRegistered && !isRejected) {
-                console.log('Auto-connecting WebSocket - subscriber registered and consented');
-                updateStatus('Auto-connecting to WebSocket...', 'connecting');
+
+        // Initialize subscriber system only if not already registered
+        zuzzuuSubscriber = new ZuzzuuSubscriber({
+          debug: true,
+          autoShowConsent: !hasConsent && !isRejected && !isRegistered, // Only show if no previous response
+          consentDelay: 2000,
+          onRegistered: function (result) {
+            console.log("Subscriber registered successfully:", result);
+            updateStatus(
+              "✅ Subscriber registered! Page will refresh to connect WebSocket...",
+              "connecting"
+            );
+
+            // Update subscriber ID after registration
+            subscriberId = localStorage.getItem("zuzzuu_subscriber_id");
+            document.getElementById("subscriber-id").textContent = subscriberId;
+
+            // Note: Page will refresh automatically from the subscriber class
+          },
+          onError: function (error) {
+            console.error("Subscriber registration failed:", error);
+            updateStatus(
+              "❌ Registration failed: " + error.message,
+              "disconnected"
+            );
+          },
+        });
+
+        // Register service worker
+        if ("serviceWorker" in navigator) {
+          try {
+            // Register service worker with more explicit scope
+            const registration = await navigator.serviceWorker.register(
+              "./js/zuzzuu-sw.js",
+              {
+                scope: "./js/", // <-- Change scope to match script location
+                updateViaCache: "none",
+              }
+            );
+            console.log("Service Worker registered:", registration);
+            document.getElementById("sw-status").textContent = "Registered";
+
+            // Wait for service worker to be ready
+            await navigator.serviceWorker.ready;
+            console.log("Service Worker ready");
+
+            // Handle service worker updates
+            registration.addEventListener("updatefound", () => {
+              console.log("Service Worker update found");
+              const newWorker = registration.installing;
+              newWorker.addEventListener("statechange", () => {
+                if (
+                  newWorker.state === "installed" &&
+                  navigator.serviceWorker.controller
+                ) {
+                  console.log("New service worker installed, will reload page");
+                  window.location.reload();
+                }
+              });
+            });
+
+            // Ensure we have an active service worker with proper control
+            serviceWorker =
+              navigator.serviceWorker.controller || registration.active;
+
+            if (!serviceWorker) {
+              console.log("No service worker controller available yet");
+              if (registration.active) {
+                console.log(
+                  "Service worker is active but not controlling, claiming clients..."
+                );
+                // Force the service worker to claim this client
+                registration.active.postMessage({ type: "CLAIM_CLIENTS" });
+
+                // Wait a bit and check again
                 setTimeout(() => {
-                    if (!isConnecting && !wsConnectionState.connected) {
-                        connectWebSocket();
-                    }
+                  if (!navigator.serviceWorker.controller) {
+                    console.log(
+                      "Still no service worker control, reloading page..."
+                    );
+                    window.location.reload();
+                  } else {
+                    serviceWorker = navigator.serviceWorker.controller;
+                    serviceWorkerReady = true;
+                    console.log(
+                      "Service worker control established after claim"
+                    );
+                    proceedWithConnection();
+                  }
                 }, 1000);
-            } else if (!subscriberId || !isRegistered) {
-                console.log('No subscriber ID or not registered - waiting for registration');
-                updateStatus('Please complete registration to receive notifications', 'connecting');
-            } else if (isRejected) {
-                updateStatus('Notifications disabled by user preference', 'disconnected');
+              } else {
+                console.log("No active service worker, reloading page...");
+                window.location.reload();
+              }
+              return;
             }
+
+            serviceWorkerReady = true;
+            console.log("Service Worker is ready and controlling");
+
+            // Listen for messages from service worker
+            navigator.serviceWorker.addEventListener(
+              "message",
+              handleServiceWorkerMessage
+            );
+
+            // Proceed with connection logic
+            proceedWithConnection();
+          } catch (error) {
+            console.error("Service Worker registration failed:", error);
+            document.getElementById("sw-status").textContent =
+              "Failed to register";
+            updateStatus("Service Worker registration failed", "disconnected");
+          }
+        } else {
+          document.getElementById("sw-status").textContent = "Not supported";
+          updateStatus("Service Workers not supported", "disconnected");
         }
-        
-        function handleServiceWorkerMessage(event) {
-            const { type, data } = event.data;
-            
-            console.log('[Main Thread] Service worker message received:', { type, data });
-            
-            switch (type) {
-                case 'WEBSOCKET_CONNECTED':
-                    isConnecting = false;
-                    connectionAttempted = true;
-                    updateStatus('✅ Connected to WebSocket - Ready to receive notifications!', 'connected');
-                    console.log('WebSocket connected successfully');
-                    break;
-                case 'WEBSOCKET_DISCONNECTED':
-                    isConnecting = false;
-                    wsConnectionState = { connected: false, subscriberId: null };
-                    localStorage.setItem('zuzzuu_ws_connection_state', JSON.stringify(wsConnectionState));
-                    updateStatus('Disconnected from WebSocket', 'disconnected');
-                    console.log('WebSocket disconnected');
-                    break;
-                case 'WEBSOCKET_ERROR':
-                    isConnecting = false;
-                    updateStatus('❌ WebSocket Error: ' + (data?.error || 'Unknown error'), 'disconnected');
-                    console.error('WebSocket error:', data?.error);
-                    break;
-                case 'NOTIFICATION_RECEIVED':
-                    console.log('🔔 Notification received from service worker:', data);
-                    
-                    // Extract the actual notification data
-                    const notificationData = data.data || data;
-                    console.log('🔔 Processing notification data:', notificationData);
-                    
-                    // Add to notification list first
-                    addNotificationToList(notificationData);
-                    
-                    // Handle the notification with ZuzzuuNotification if available
-                    if (zuzzuuNotification) {
-                        console.log('Calling zuzzuuNotification.handleNotification with:', notificationData);
-                        zuzzuuNotification.handleNotification(notificationData);
-                    } else {
-                        console.warn('ZuzzuuNotification not initialized, showing fallback notification');
-                        // Fallback: show browser notification directly
-                        if ('Notification' in window && Notification.permission === 'granted') {
-                            const notification = new Notification(notificationData.title || 'New Notification', {
-                                body: notificationData.message || '',
-                                icon: notificationData.logo_url || '/favicon.ico'
-                            });
-                            
-                            notification.onclick = () => {
-                                if (notificationData.url) {
-                                    window.open(notificationData.url, '_blank');
-                                }
-                                notification.close();
-                            };
-                        }
-                    }
-                    break;
-                case 'STORE_CONNECTION_STATE':
-                    wsConnectionState = data.data || data;
-                    localStorage.setItem('zuzzuu_ws_connection_state', JSON.stringify(wsConnectionState));
-                    console.log('Connection state stored:', wsConnectionState);
-                    break;
-                default:
-                    console.log('Unknown service worker message type:', type);
-            }
+
+        // Initialize notification system after everything is set up
+        if (!zuzzuuNotification) {
+          zuzzuuNotification = new ZuzzuuNotification({
+            debug: true,
+            autoConnect: false, // We'll manage connection manually
+            onNotificationClick: function (data) {
+              console.log("Notification clicked:", data);
+            },
+            onConnectionChange: function (connected) {
+              console.log("Notification connection changed:", connected);
+            },
+          });
         }
-        
-        function connectWebSocket() {
-            // Get latest subscriber ID and registration status
-            subscriberId = localStorage.getItem('zuzzuu_subscriber_id');
-            const isRegistered = localStorage.getItem('zuzzuu_subscriber_registered');
-            const hasConsent = localStorage.getItem('zuzzuu_notification_consent');
-            
-            console.log('Connect attempt with:', { subscriberId, isRegistered, hasConsent, serviceWorkerReady });
-            
-            if (!subscriberId) {
-                updateStatus('❌ No subscriber ID found - please complete registration first', 'disconnected');
-                return;
+
+        // Button event listeners
+        document
+          .getElementById("connect-btn")
+          .addEventListener("click", connectWebSocket);
+        document
+          .getElementById("disconnect-btn")
+          .addEventListener("click", disconnectWebSocket);
+      });
+
+      function proceedWithConnection() {
+        const hasConsent = localStorage.getItem("zuzzuu_notification_consent");
+        const isRejected = localStorage.getItem("zuzzuu_notification_rejected");
+        const isRegistered = localStorage.getItem(
+          "zuzzuu_subscriber_registered"
+        );
+
+        // Determine if we should auto-connect
+        if (
+          wsConnectionState.connected &&
+          wsConnectionState.subscriberId === subscriberId
+        ) {
+          console.log("Found existing connection state for current subscriber");
+          updateStatus(
+            "✅ Connected to WebSocket - Ready to receive notifications!",
+            "connected"
+          );
+          connectionAttempted = true;
+        } else if (subscriberId && hasConsent && isRegistered && !isRejected) {
+          console.log(
+            "Auto-connecting WebSocket - subscriber registered and consented"
+          );
+          updateStatus("Auto-connecting to WebSocket...", "connecting");
+          setTimeout(() => {
+            if (!isConnecting && !wsConnectionState.connected) {
+              connectWebSocket();
             }
-            
-            if (!isRegistered || !hasConsent) {
-                updateStatus('❌ Please complete registration first', 'disconnected');
-                return;
-            }
-            
-            if (!serviceWorkerReady || !navigator.serviceWorker.controller) {
-                updateStatus('❌ Service Worker not ready - refreshing page...', 'disconnected');
-                console.log('Service worker not ready or not controlling, refreshing page...');
-                setTimeout(() => {
-                    window.location.reload();
-                }, 2000);
-                return;
-            }
-            
-            if (isConnecting) {
-                console.log('Connection already in progress, skipping...');
-                return;
-            }
-            
-            // Check if already connected to this subscriber
-            if (wsConnectionState.connected && wsConnectionState.subscriberId === subscriberId) {
-                console.log('Already connected to this subscriber');
-                updateStatus('✅ Already connected', 'connected');
-                return;
-            }
-            
-            isConnecting = true;
-            updateStatus('🔄 Connecting to WebSocket...', 'connecting');
-            
-            // Determine WebSocket URL based on environment
-            const isProduction = window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
-            const wsUrl = isProduction 
-                ? 'wss://vibte.xyz/api/v1/ws'
-                : 'ws://localhost:8001/api/v1/ws';
-            
-            console.log(`Environment: ${isProduction ? 'production' : 'development'}, WebSocket URL: ${wsUrl}`);
-            
-            if (navigator.serviceWorker.controller) {
-                console.log('Sending connect message to service worker');
-                navigator.serviceWorker.controller.postMessage({
-                    type: 'CONNECT_WEBSOCKET',
-                    data: {
-                        subscriberId: subscriberId,
-                        wsUrl: wsUrl
-                    }
-                });
-                
-                // Set timeout for connection attempt
-                setTimeout(() => {
-                    if (isConnecting) {
-                        console.log('Connection attempt timed out');
-                        isConnecting = false;
-                        updateStatus('❌ Connection timeout - please try again', 'disconnected');
-                    }
-                }, 15000);
-            } else {
-                isConnecting = false;
-                updateStatus('❌ Service Worker not available - refreshing page...', 'disconnected');
-                console.log('Service worker controller not available, refreshing page...');
-                setTimeout(() => {
-                    window.location.reload();
-                }, 2000);
-            }
+          }, 1000);
+        } else if (!subscriberId || !isRegistered) {
+          console.log(
+            "No subscriber ID or not registered - waiting for registration"
+          );
+          updateStatus(
+            "Please complete registration to receive notifications",
+            "connecting"
+          );
+        } else if (isRejected) {
+          updateStatus(
+            "Notifications disabled by user preference",
+            "disconnected"
+          );
         }
-        
-        function disconnectWebSocket() {
+      }
+
+      function handleServiceWorkerMessage(event) {
+        const { type, data } = event.data;
+
+        console.log("[Main Thread] Service worker message received:", {
+          type,
+          data,
+        });
+
+        switch (type) {
+          case "WEBSOCKET_CONNECTED":
             isConnecting = false;
-            connectionAttempted = false;
+            connectionAttempted = true;
+            updateStatus(
+              "✅ Connected to WebSocket - Ready to receive notifications!",
+              "connected"
+            );
+            console.log("WebSocket connected successfully");
+            break;
+          case "WEBSOCKET_DISCONNECTED":
+            isConnecting = false;
             wsConnectionState = { connected: false, subscriberId: null };
-            localStorage.setItem('zuzzuu_ws_connection_state', JSON.stringify(wsConnectionState));
-            updateStatus('Disconnecting...', 'connecting');
-            
-            if (navigator.serviceWorker.controller) {
-                navigator.serviceWorker.controller.postMessage({
-                    type: 'DISCONNECT_WEBSOCKET'
-                });
+            localStorage.setItem(
+              "zuzzuu_ws_connection_state",
+              JSON.stringify(wsConnectionState)
+            );
+            updateStatus("Disconnected from WebSocket", "disconnected");
+            console.log("WebSocket disconnected");
+            break;
+          case "WEBSOCKET_ERROR":
+            isConnecting = false;
+            updateStatus(
+              "❌ WebSocket Error: " + (data?.error || "Unknown error"),
+              "disconnected"
+            );
+            console.error("WebSocket error:", data?.error);
+            break;
+          case "NOTIFICATION_RECEIVED":
+            console.log("🔔 Notification received from service worker:", data);
+
+            // Extract the actual notification data
+            const notificationData = data.data || data;
+            console.log("🔔 Processing notification data:", notificationData);
+
+            // Add to notification list first
+            addNotificationToList(notificationData);
+
+            // Handle the notification with ZuzzuuNotification if available
+            if (zuzzuuNotification) {
+              console.log(
+                "Calling zuzzuuNotification.handleNotification with:",
+                notificationData
+              );
+              zuzzuuNotification.handleNotification(notificationData);
+            } else {
+              console.warn(
+                "ZuzzuuNotification not initialized, showing fallback notification"
+              );
+              // Fallback: show browser notification directly
+              if (
+                "Notification" in window &&
+                Notification.permission === "granted"
+              ) {
+                const notification = new Notification(
+                  notificationData.title || "New Notification",
+                  {
+                    body: notificationData.message || "",
+                    icon: notificationData.logo_url || "/favicon.ico",
+                  }
+                );
+
+                notification.onclick = () => {
+                  if (notificationData.url) {
+                    window.open(notificationData.url, "_blank");
+                  }
+                  notification.close();
+                };
+              }
             }
+            break;
+          case "STORE_CONNECTION_STATE":
+            wsConnectionState = data.data || data;
+            localStorage.setItem(
+              "zuzzuu_ws_connection_state",
+              JSON.stringify(wsConnectionState)
+            );
+            console.log("Connection state stored:", wsConnectionState);
+            break;
+          default:
+            console.log("Unknown service worker message type:", type);
         }
-        
-        function updateStatus(message, className) {
-            const statusElement = document.getElementById('status');
-            statusElement.textContent = message;
-            statusElement.className = 'status ' + className;
+      }
+
+      function connectWebSocket() {
+        // Get latest subscriber ID and registration status
+        subscriberId = localStorage.getItem("zuzzuu_subscriber_id");
+        const isRegistered = localStorage.getItem(
+          "zuzzuu_subscriber_registered"
+        );
+        const hasConsent = localStorage.getItem("zuzzuu_notification_consent");
+
+        console.log("Connect attempt with:", {
+          subscriberId,
+          isRegistered,
+          hasConsent,
+          serviceWorkerReady,
+        });
+
+        if (!subscriberId) {
+          updateStatus(
+            "❌ No subscriber ID found - please complete registration first",
+            "disconnected"
+          );
+          return;
         }
-        
-        function addNotificationToList(notification) {
-            console.log('Adding notification to list:', notification);
-            
-            if (!notification) {
-                console.error('Notification data is null or undefined');
-                return;
+
+        if (!isRegistered || !hasConsent) {
+          updateStatus("❌ Please complete registration first", "disconnected");
+          return;
+        }
+
+        if (!serviceWorkerReady || !navigator.serviceWorker.controller) {
+          updateStatus(
+            "❌ Service Worker not ready - refreshing page...",
+            "disconnected"
+          );
+          console.log(
+            "Service worker not ready or not controlling, refreshing page..."
+          );
+          setTimeout(() => {
+            window.location.reload();
+          }, 2000);
+          return;
+        }
+
+        if (isConnecting) {
+          console.log("Connection already in progress, skipping...");
+          return;
+        }
+
+        // Check if already connected to this subscriber
+        if (
+          wsConnectionState.connected &&
+          wsConnectionState.subscriberId === subscriberId
+        ) {
+          console.log("Already connected to this subscriber");
+          updateStatus("✅ Already connected", "connected");
+          return;
+        }
+
+        isConnecting = true;
+        updateStatus("🔄 Connecting to WebSocket...", "connecting");
+
+        // Determine WebSocket URL based on environment
+        const isProduction =
+          window.location.hostname !== "localhost" &&
+          window.location.hostname !== "127.0.0.1";
+        const wsUrl = isProduction
+          ? "wss://vibte.xyz/api/v1/ws"
+          : "ws://localhost:8002/api/v1/ws";
+
+        console.log(
+          `Environment: ${
+            isProduction ? "production" : "development"
+          }, WebSocket URL: ${wsUrl}`
+        );
+
+        if (navigator.serviceWorker.controller) {
+          console.log("Sending connect message to service worker");
+          navigator.serviceWorker.controller.postMessage({
+            type: "CONNECT_WEBSOCKET",
+            data: {
+              subscriberId: subscriberId,
+              wsUrl: wsUrl,
+            },
+          });
+
+          // Set timeout for connection attempt
+          setTimeout(() => {
+            if (isConnecting) {
+              console.log("Connection attempt timed out");
+              isConnecting = false;
+              updateStatus(
+                "❌ Connection timeout - please try again",
+                "disconnected"
+              );
             }
-            
-            const listElement = document.getElementById('notification-list');
-            if (!listElement) {
-                console.error('Notification list element not found');
-                return;
-            }
-            
-            const notificationElement = document.createElement('div');
-            notificationElement.style.cssText = 'padding: 10px; margin: 5px 0; background: #f8f9fa; border-radius: 4px; border-left: 4px solid #007bff; cursor: pointer;';
-            
-            // Safely access notification properties with fallbacks
-            const title = notification.title || 'No title';
-            const message = notification.message || 'No message';
-            const url = notification.url || '';
-            const timestamp = new Date().toLocaleTimeString();
-            
-            notificationElement.innerHTML = `
+          }, 15000);
+        } else {
+          isConnecting = false;
+          updateStatus(
+            "❌ Service Worker not available - refreshing page...",
+            "disconnected"
+          );
+          console.log(
+            "Service worker controller not available, refreshing page..."
+          );
+          setTimeout(() => {
+            window.location.reload();
+          }, 2000);
+        }
+      }
+
+      function disconnectWebSocket() {
+        isConnecting = false;
+        connectionAttempted = false;
+        wsConnectionState = { connected: false, subscriberId: null };
+        localStorage.setItem(
+          "zuzzuu_ws_connection_state",
+          JSON.stringify(wsConnectionState)
+        );
+        updateStatus("Disconnecting...", "connecting");
+
+        if (navigator.serviceWorker.controller) {
+          navigator.serviceWorker.controller.postMessage({
+            type: "DISCONNECT_WEBSOCKET",
+          });
+        }
+      }
+
+      function updateStatus(message, className) {
+        const statusElement = document.getElementById("status");
+        statusElement.textContent = message;
+        statusElement.className = "status " + className;
+      }
+
+      function addNotificationToList(notification) {
+        console.log("Adding notification to list:", notification);
+
+        if (!notification) {
+          console.error("Notification data is null or undefined");
+          return;
+        }
+
+        const listElement = document.getElementById("notification-list");
+        if (!listElement) {
+          console.error("Notification list element not found");
+          return;
+        }
+
+        const notificationElement = document.createElement("div");
+        notificationElement.style.cssText =
+          "padding: 10px; margin: 5px 0; background: #f8f9fa; border-radius: 4px; border-left: 4px solid #007bff; cursor: pointer;";
+
+        // Safely access notification properties with fallbacks
+        const title = notification.title || "No title";
+        const message = notification.message || "No message";
+        const url = notification.url || "";
+        const timestamp = new Date().toLocaleTimeString();
+
+        notificationElement.innerHTML = `
                 <strong>${title}</strong><br>
                 <small>${message}</small><br>
                 <small style="color: #6c757d;">${timestamp}</small>
-                ${url ? `<br><small style="color: #007bff;">🔗 ${url}</small>` : ''}
+                ${
+                  url
+                    ? `<br><small style="color: #007bff;">🔗 ${url}</small>`
+                    : ""
+                }
             `;
-            
-            // Add click handler to open URL
-            if (url) {
-                notificationElement.addEventListener('click', () => {
-                    window.open(url, '_blank');
-                });
-            }
-            
-            listElement.insertBefore(notificationElement, listElement.firstChild);
-            
-            // Keep only last 5 notifications
-            while (listElement.children.length > 5) {
-                listElement.removeChild(listElement.lastChild);
-            }
-            
-            // Add visual feedback
-            notificationElement.style.animation = 'fadeInScale 0.3s ease-out';
-            
-            console.log('Notification added to DOM successfully');
+
+        // Add click handler to open URL
+        if (url) {
+          notificationElement.addEventListener("click", () => {
+            window.open(url, "_blank");
+          });
         }
+
+        listElement.insertBefore(notificationElement, listElement.firstChild);
+
+        // Keep only last 5 notifications
+        while (listElement.children.length > 5) {
+          listElement.removeChild(listElement.lastChild);
+        }
+
+        // Add visual feedback
+        notificationElement.style.animation = "fadeInScale 0.3s ease-out";
+
+        console.log("Notification added to DOM successfully");
+      }
     </script>
-</body>
+  </body>
 </html>
