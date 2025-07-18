@@ -89,17 +89,13 @@
     <div class="container">
       <h1>Zuzzuu WebSocket Connection Status</h1>
 
-      <div id="status" class="status connecting">Initializing...</div>
-
       <div class="info">
+        <strong>WebSocket:</strong>
+        <span id="ws-status">Checking...</span><br />
+        <strong>Service Worker:</strong>
+        <span id="sw-status">Checking...</span><br />
         <strong>Subscriber ID:</strong>
-        <span id="subscriber-id">Loading...</span><br />
-        <strong>Service Worker:</strong> <span id="sw-status">Checking...</span>
-      </div>
-
-      <div>
-        <button id="connect-btn" class="btn btn-primary">Connect</button>
-        <button id="disconnect-btn" class="btn btn-danger">Disconnect</button>
+        <span id="subscriber-id">Loading...</span>
       </div>
 
       <div id="notifications" style="margin-top: 20px">
@@ -137,7 +133,9 @@
         subscriberId = localStorage.getItem("zuzzuu_subscriber_id");
         document.getElementById("subscriber-id").textContent =
           subscriberId || "Not found";
-
+        document.getElementById("sw-status").textContent = "Checking...";
+        // Always set initial WebSocket status to "Disconnected"
+        document.getElementById("ws-status").textContent = "Disconnected";
         // Load stored connection state
         const storedConnectionState = localStorage.getItem(
           "zuzzuu_ws_connection_state"
@@ -173,15 +171,15 @@
           onRegistered: function (result) {
             console.log("Subscriber registered successfully:", result);
             updateStatus(
-              "✅ Subscriber registered! Page will refresh to connect WebSocket...",
+              "✅ Registered! Please click Connect to start receiving notifications.",
               "connecting"
             );
-
             // Update subscriber ID after registration
             subscriberId = localStorage.getItem("zuzzuu_subscriber_id");
             document.getElementById("subscriber-id").textContent = subscriberId;
-
-            // Note: Page will refresh automatically from the subscriber class
+            setTimeout(() => {
+              window.location.reload();
+            }, 1500);
           },
           onError: function (error) {
             console.error("Subscriber registration failed:", error);
@@ -296,14 +294,6 @@
             },
           });
         }
-
-        // Button event listeners
-        document
-          .getElementById("connect-btn")
-          .addEventListener("click", connectWebSocket);
-        document
-          .getElementById("disconnect-btn")
-          .addEventListener("click", disconnectWebSocket);
       });
 
       function proceedWithConnection() {
@@ -328,7 +318,10 @@
           console.log(
             "Auto-connecting WebSocket - subscriber registered and consented"
           );
-          updateStatus("Auto-connecting to WebSocket...", "connecting");
+          updateStatus(
+            "Registered! Please click Connect to start receiving notifications.",
+            "connecting"
+          );
           setTimeout(() => {
             if (!isConnecting && !wsConnectionState.connected) {
               connectWebSocket();
@@ -339,12 +332,12 @@
             "No subscriber ID or not registered - waiting for registration"
           );
           updateStatus(
-            "Please complete registration to receive notifications",
+            "Please complete registration to receive notifications.",
             "connecting"
           );
         } else if (isRejected) {
           updateStatus(
-            "Notifications disabled by user preference",
+            "Notifications disabled by user preference.",
             "disconnected"
           );
         }
@@ -362,10 +355,12 @@
           case "WEBSOCKET_CONNECTED":
             isConnecting = false;
             connectionAttempted = true;
-            updateStatus(
-              "✅ Connected to WebSocket - Ready to receive notifications!",
-              "connected"
+            wsConnectionState = { connected: true, subscriberId: subscriberId };
+            localStorage.setItem(
+              "zuzzuu_ws_connection_state",
+              JSON.stringify(wsConnectionState)
             );
+            document.getElementById("ws-status").textContent = "Connected";
             console.log("WebSocket connected successfully");
             break;
           case "WEBSOCKET_DISCONNECTED":
@@ -375,15 +370,13 @@
               "zuzzuu_ws_connection_state",
               JSON.stringify(wsConnectionState)
             );
-            updateStatus("Disconnected from WebSocket", "disconnected");
+            document.getElementById("ws-status").textContent = "Disconnected";
             console.log("WebSocket disconnected");
             break;
           case "WEBSOCKET_ERROR":
             isConnecting = false;
-            updateStatus(
-              "❌ WebSocket Error: " + (data?.error || "Unknown error"),
-              "disconnected"
-            );
+            document.getElementById("ws-status").textContent =
+              "Error: " + (data?.error || "Unknown error");
             console.error("WebSocket error:", data?.error);
             break;
           case "NOTIFICATION_RECEIVED":
@@ -396,17 +389,10 @@
             // Add to notification list first
             addNotificationToList(notificationData);
 
-            // Handle the notification with ZuzzuuNotification if available
+            // Always show notification via ZuzzuuNotification system
             if (zuzzuuNotification) {
-              console.log(
-                "Calling zuzzuuNotification.handleNotification with:",
-                notificationData
-              );
               zuzzuuNotification.handleNotification(notificationData);
             } else {
-              console.warn(
-                "ZuzzuuNotification not initialized, showing fallback notification"
-              );
               // Fallback: show browser notification directly
               if (
                 "Notification" in window &&
@@ -506,7 +492,9 @@
         const isProduction =
           window.location.hostname !== "localhost" &&
           window.location.hostname !== "127.0.0.1";
-        const wsUrl = "wss://vibte.xyz/api/v1/ws";
+        const wsUrl = isProduction
+          ? "wss://vibte.xyz/api/v1/ws"
+          : "ws://localhost:8002/api/v1/ws";
 
         console.log(
           `Environment: ${
@@ -520,7 +508,7 @@
             type: "CONNECT_WEBSOCKET",
             data: {
               subscriberId: subscriberId,
-              wsUrl: wsUrl,
+              wsUrl: "wss://vibte.xyz/api/v1/ws",
             },
           });
 
@@ -571,6 +559,32 @@
         const statusElement = document.getElementById("status");
         statusElement.textContent = message;
         statusElement.className = "status " + className;
+
+        // Optionally add a helper explanation below the status
+        let helper = document.getElementById("status-helper");
+        if (!helper) {
+          helper = document.createElement("div");
+          helper.id = "status-helper";
+          helper.style.fontSize = "13px";
+          helper.style.color = "#666";
+          helper.style.marginTop = "4px";
+          statusElement.parentNode.insertBefore(
+            helper,
+            statusElement.nextSibling
+          );
+        }
+        if (className === "connecting") {
+          helper.textContent =
+            "Waiting for registration and service worker to complete. You can connect once ready.";
+        } else if (className === "connected") {
+          helper.textContent =
+            "You are connected and will receive notifications.";
+        } else if (className === "disconnected") {
+          helper.textContent =
+            "Not connected. Please register and click Connect.";
+        } else {
+          helper.textContent = "";
+        }
       }
 
       function addNotificationToList(notification) {
