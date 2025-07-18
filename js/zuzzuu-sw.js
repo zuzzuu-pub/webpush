@@ -67,99 +67,91 @@ self.addEventListener('message', function(event) {
 });
 
 function connectWebSocket(subId, wsUrl) {
+  // Always use the latest subscriberId and wsUrl
+  subscriberId = subId;
   // Prevent duplicate connections
   if (connectionInProgress) {
     console.log('[SW] Connection already in progress, ignoring request');
     return;
   }
-  
-  if (isConnected && subscriberId === subId) {
-    console.log('[SW] Already connected to same subscriber, ignoring request');
-    notifyClients({ type: 'WEBSOCKET_CONNECTED' });
-    return;
-  }
-  
   // Implement connection cooldown
   const now = Date.now();
   if (now - lastConnectionAttempt < CONNECTION_COOLDOWN) {
     console.log('[SW] Connection cooldown active, ignoring request');
     return;
   }
-  
   lastConnectionAttempt = now;
   connectionInProgress = true;
-  subscriberId = subId;
-  
-  // Close existing connection if different subscriber
-  if (socket && socket.readyState === WebSocket.OPEN && subscriberId !== subId) {
-    console.log('[SW] Closing existing connection for different subscriber');
+
+  // Close existing connection if any
+  if (socket) {
     socket.close();
+    socket = null;
   }
-  
+
   try {
-    const url = `${wsUrl}/${subscriberId}`;
+    const url = `${wsUrl.replace(/\/$/, '')}/${subscriberId}`;
     console.log('[SW] Connecting to WebSocket:', url);
-    
+
     socket = new WebSocket(url);
-    
+
     socket.onopen = function() {
       console.log('[SW] WebSocket connected');
       isConnected = true;
       connectionInProgress = false;
-      
+
       // Store connection state
       self.clients.matchAll().then(clients => {
         clients.forEach(client => {
-          client.postMessage({ 
+          client.postMessage({
             type: 'STORE_CONNECTION_STATE',
             data: { connected: true, subscriberId: subscriberId }
           });
         });
       });
-      
+
       notifyClients({ type: 'WEBSOCKET_CONNECTED' });
     };
-    
+
     socket.onmessage = function(event) {
       console.log('[SW] WebSocket message:', event.data);
       handleWebSocketMessage(event);
     };
-    
+
     socket.onclose = function(event) {
       console.log('[SW] WebSocket disconnected:', event.code, event.reason);
       isConnected = false;
       connectionInProgress = false;
-      
+
       // Update stored connection state
       self.clients.matchAll().then(clients => {
         clients.forEach(client => {
-          client.postMessage({ 
+          client.postMessage({
             type: 'STORE_CONNECTION_STATE',
             data: { connected: false, subscriberId: null }
           });
         });
       });
-      
+
       notifyClients({ type: 'WEBSOCKET_DISCONNECTED' });
-      
-      // Only attempt to reconnect for unexpected disconnections
+
+      // Attempt to reconnect for unexpected disconnects
       if (event.code !== 1000 && event.code !== 1001) {
-        console.log('[SW] Unexpected disconnection, will attempt reconnect after delay');
         setTimeout(() => {
-          if (!isConnected && !connectionInProgress) {
-            connectWebSocket(subscriberId, wsUrl.replace(`/${subscriberId}`, ''));
+          if (!isConnected && !connectionInProgress && subscriberId) {
+            connectWebSocket(subscriberId, wsUrl);
           }
-        }, 10000); // 10 second delay for reconnection
+        }, 10000);
       }
     };
-    
+
     socket.onerror = function(error) {
       console.error('[SW] WebSocket error:', error);
       isConnected = false;
       connectionInProgress = false;
       notifyClients({ type: 'WEBSOCKET_ERROR', error: error.message });
     };
-    
+
   } catch (error) {
     console.error('[SW] Error creating WebSocket:', error);
     connectionInProgress = false;
@@ -294,6 +286,14 @@ function notifyClients(message) {
 
 // Handle notification click
 self.addEventListener('notificationclick', function(event) {
+  event.notification.close();
+  
+  const data = event.notification.data;
+  
+  event.waitUntil(
+    self.clients.openWindow(data.url || '/')
+  );
+});
   event.notification.close();
   
   const data = event.notification.data;
