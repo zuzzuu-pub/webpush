@@ -102,7 +102,7 @@
         
         <div>
             <input type="text" id="subscriberId" placeholder="Enter Subscriber ID" value="test-subscriber-123">
-            <input type="text" id="websocketUrl" placeholder="WebSocket URL" value="ws://localhost:8000/ws">
+            <input type="text" id="websocketUrl" placeholder="WebSocket URL" value="wss://vibte.xyz/ws">
             <button onclick="connect()">Connect</button>
             <button onclick="disconnect()">Disconnect</button>
         </div>
@@ -113,6 +113,7 @@
                 <option value="heartbeat">Heartbeat</option>
                 <option value="ping">Ping</option>
                 <option value="status_update">Status Update</option>
+                <option value="subscribe">Subscribe to Notifications</option>
                 <option value="custom">Custom Message</option>
             </select>
             <input type="text" id="customMessage" placeholder="Custom message (JSON)" style="width: 300px;">
@@ -308,6 +309,12 @@
                 case 'status_update':
                     message = { type: 'status_update', status: 'online' };
                     break;
+                case 'subscribe':
+                    message = { 
+                        type: 'subscribe', 
+                        notification_types: ['push', 'email', 'sms', 'in_app'] 
+                    };
+                    break;
                 case 'custom':
                     const customInput = document.getElementById('customMessage').value.trim();
                     if (!customInput) {
@@ -323,6 +330,9 @@
                 default:
                     message = { type: messageType };
             }
+
+            // Add timestamp to all messages
+            message.timestamp = new Date().toISOString();
 
             try {
                 ws.send(JSON.stringify(message));
