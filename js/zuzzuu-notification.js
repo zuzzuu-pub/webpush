@@ -518,80 +518,27 @@ class ZuzzuuNotification {
    * Handle notification from server (public method)
    */
   handleNotification(data) {
-    console.log('ZuzzuuNotification: Handling notification:', data);
-    
+    // Always extract notification object
+    const notificationData = data.data || data;
+
+    console.log('ZuzzuuNotification: Handling notification:', notificationData);
+
     // Ensure we have valid notification data
-    if (!data) {
+    if (!notificationData) {
       console.error('ZuzzuuNotification: No notification data provided');
       return;
     }
-    
-    // Extract notification data if it's nested
-    const notificationData = data.data || data;
-    console.log('ZuzzuuNotification: Processing notification data:', notificationData);
-    
+
     // Ensure notification container exists
     if (!this.notificationContainer) {
       this.log('Notification container not found, creating it');
       this.createNotificationContainer();
     }
-    
-    // Show browser notification if supported
-    this.showBrowserNotification(notificationData);
-    
-    // Show in-app notification
+
+    // Only show in-app notification, do not show browser notification
     this.showInAppNotification(notificationData);
-    
+
     this.log('Notification handling completed');
-  }
-  
-  /**
-   * Show browser notification
-   */
-  showBrowserNotification(data) {
-    if (!('Notification' in window) || Notification.permission !== 'granted') {
-      this.log('Browser notifications not available or not permitted');
-      return;
-    }
-    
-    try {
-      // Safely access notification properties
-      const title = data.title || 'New Notification';
-      const message = data.message || '';
-      const logoUrl = data.logo_url || data.image_url || this.options.logoUrl || '/favicon.ico';
-      
-      const notification = new Notification(title, {
-        body: message,
-        icon: logoUrl,
-        tag: data.id || 'zuzzuu-notification',
-        data: data,
-        requireInteraction: false
-      });
-      
-      notification.onclick = () => {
-        notification.close();
-        window.focus();
-        
-        // Open URL if provided
-        if (data.url) {
-          window.open(data.url, '_blank');
-        }
-        
-        // Call onNotificationClick callback if provided
-        if (this.options.onNotificationClick) {
-          this.options.onNotificationClick(data);
-        }
-      };
-      
-      // Auto-close browser notification after 5 seconds
-      setTimeout(() => {
-        notification.close();
-      }, 5000);
-      
-      this.log('Browser notification shown');
-    } catch (error) {
-      this.log('Error showing browser notification:', error);
-    }
   }
   
   /**
@@ -624,19 +571,20 @@ class ZuzzuuNotification {
     notificationElement.appendChild(closeButton);
     
     // Add image container if image is provided
-    if (data.image_url) {
+    const imageUrl = data.image_url || '';
+    if (imageUrl) {
       const imageContainer = document.createElement('div');
       imageContainer.className = 'zuzzuu-notification-image-container';
-      
+
       const image = document.createElement('img');
       image.className = 'zuzzuu-notification-image';
-      image.src = data.image_url;
+      image.src = imageUrl;
       image.alt = data.title || 'Notification Image';
       image.onerror = () => {
-        // Hide image container if image fails to load
-        imageContainer.style.display = 'none';
+        // Show fallback image if image fails to load
+        image.src = 'https://placehold.co/380x140?text=No+Image';
       };
-      
+
       imageContainer.appendChild(image);
       notificationElement.appendChild(imageContainer);
     }
