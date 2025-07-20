@@ -89,13 +89,22 @@
     <div class="container">
       <h1>Zuzzuu WebSocket Connection Status</h1>
 
+      <div id="status" class="status"></div>
       <div class="info">
         <strong>WebSocket:</strong>
         <span id="ws-status">Checking...</span><br />
         <strong>Service Worker:</strong>
         <span id="sw-status">Checking...</span><br />
         <strong>Subscriber ID:</strong>
-        <span id="subscriber-id">Loading...</span>
+        <span id="subscriber-id">Loading...</span><br />
+        <strong>Current URL:</strong>
+        <span id="current-url">Loading...</span><br />
+        <strong>API URL:</strong>
+        <span id="api-url">Loading...</span>
+      </div>
+      <div style="margin-top: 20px;">
+        <button onclick="connectWebSocket()" class="btn btn-primary">Connect</button>
+        <button onclick="disconnectWebSocket()" class="btn btn-danger">Disconnect</button>
       </div>
 
       <div id="notifications" style="margin-top: 20px">
@@ -108,6 +117,42 @@
     <script src="js/zuzzuu-notification.js"></script>
 
     <script>
+      // Smart WebSocket URL Configuration that detects the correct API server
+      function getApiBaseUrl() {
+        const hostname = window.location.hostname;
+        const protocol = window.location.protocol;
+        
+        // Production environment
+        if (hostname !== 'localhost' && hostname !== '127.0.0.1') {
+          return 'https://vibte.xyz/api/v1';
+        }
+        
+        // Development environment - try to detect the correct port
+        // Common API server ports: 8002, 8000, 3000, 5000
+        const commonPorts = [8002, 8000, 3000, 5000];
+        
+        // If we're on a specific port, try that port first, then common ports
+        const currentPort = window.location.port;
+        if (currentPort && !commonPorts.includes(parseInt(currentPort))) {
+          commonPorts.unshift(parseInt(currentPort));
+        }
+        
+        // Default to port 8002 for development
+        return `${protocol}//${hostname}:8002/api/v1`;
+      }
+
+      function getWebSocketUrl() {
+        const hostname = window.location.hostname;
+        
+        // Production environment
+        if (hostname !== 'localhost' && hostname !== '127.0.0.1') {
+          return 'wss://vibte.xyz/api/v1/ws';
+        }
+        
+        // Development environment
+        return `ws://${hostname}:8002/api/v1/ws`;
+      }
+
       let serviceWorker = null;
       let zuzzuuSubscriber = null;
       let subscriberId = null;
@@ -120,6 +165,10 @@
       let zuzzuuNotification = null;
 
       document.addEventListener("DOMContentLoaded", async function () {
+        // Display current configuration
+        document.getElementById("current-url").textContent = window.location.href;
+        document.getElementById("api-url").textContent = getApiBaseUrl();
+
         // Check if we just refreshed after registration
         const needsRefresh = localStorage.getItem("zuzzuu_needs_page_refresh");
         if (needsRefresh) {
@@ -134,9 +183,8 @@
         document.getElementById("subscriber-id").textContent =
           subscriberId || "Not found";
         document.getElementById("sw-status").textContent = "Checking...";
-        // Always set initial WebSocket status to "Disconnected"
-        document.getElementById("ws-status").textContent = "Disconnected";
-        // Load stored connection state
+
+        // Load stored connection state BEFORE setting ws-status
         const storedConnectionState = localStorage.getItem(
           "zuzzuu_ws_connection_state"
         );
@@ -147,7 +195,15 @@
             console.log("Error parsing stored connection state:", e);
           }
         }
-
+        // Set initial WebSocket status based on stored state
+        if (
+          wsConnectionState.connected &&
+          wsConnectionState.subscriberId === subscriberId
+        ) {
+          document.getElementById("ws-status").textContent = "Connected";
+        } else {
+          document.getElementById("ws-status").textContent = "Disconnected";
+        }
         // Check user consent and registration status
         const hasConsent = localStorage.getItem("zuzzuu_notification_consent");
         const isRejected = localStorage.getItem("zuzzuu_notification_rejected");
@@ -166,6 +222,8 @@
         // Initialize subscriber system only if not already registered
         zuzzuuSubscriber = new ZuzzuuSubscriber({
           debug: true,
+          apiUrl: getApiBaseUrl() + '/subscriber',
+          pubRegisterUrl: getApiBaseUrl() + '/public/register',
           autoShowConsent: !hasConsent && !isRejected && !isRegistered, // Only show if no previous response
           consentDelay: 2000,
           onRegistered: function (result) {
@@ -193,11 +251,11 @@
         // Register service worker
         if ("serviceWorker" in navigator) {
           try {
-            // Register service worker with more explicit scope
+            // Register service worker with root scope for proper WebSocket handling
             const registration = await navigator.serviceWorker.register(
-              "./js/zuzzuu-sw.js",
+              "./zuzzuu-sw.js",
               {
-                scope: "./js/", // <-- Change scope to match script location
+                scope: "./", // Root scope for proper control
                 updateViaCache: "none",
               }
             );
@@ -285,6 +343,8 @@
         if (!zuzzuuNotification) {
           zuzzuuNotification = new ZuzzuuNotification({
             debug: true,
+            apiUrl: getApiBaseUrl(),
+            wsUrl: getWebSocketUrl(),
             autoConnect: false, // We'll manage connection manually
             onNotificationClick: function (data) {
               console.log("Notification clicked:", data);
@@ -361,7 +421,10 @@
               JSON.stringify(wsConnectionState)
             );
             document.getElementById("ws-status").textContent = "Connected";
-            console.log("WebSocket connected successfully");
+            updateStatus(
+              "✅ Connected to WebSocket - Ready to receive notifications!",
+              "connected"
+            );
             break;
           case "WEBSOCKET_DISCONNECTED":
             isConnecting = false;
@@ -371,13 +434,16 @@
               JSON.stringify(wsConnectionState)
             );
             document.getElementById("ws-status").textContent = "Disconnected";
-            console.log("WebSocket disconnected");
+            updateStatus("❌ WebSocket disconnected", "disconnected");
             break;
           case "WEBSOCKET_ERROR":
             isConnecting = false;
             document.getElementById("ws-status").textContent =
               "Error: " + (data?.error || "Unknown error");
-            console.error("WebSocket error:", data?.error);
+            updateStatus(
+              "❌ WebSocket error: " + (data?.error || "Unknown error"),
+              "disconnected"
+            );
             break;
           case "NOTIFICATION_RECEIVED":
             console.log("🔔 Notification received from service worker:", data);
@@ -488,19 +554,10 @@
         isConnecting = true;
         updateStatus("🔄 Connecting to WebSocket...", "connecting");
 
-        // Determine WebSocket URL based on environment
-        const isProduction =
-          window.location.hostname !== "localhost" &&
-          window.location.hostname !== "127.0.0.1";
-        const wsUrl = isProduction
-          ? "wss://vibte.xyz/api/v1/ws"
-          : "ws://localhost:8002/api/v1/ws";
+        // Get the WebSocket URL
+        const wsUrl = getWebSocketUrl();
 
-        console.log(
-          `Environment: ${
-            isProduction ? "production" : "development"
-          }, WebSocket URL: ${wsUrl}`
-        );
+        console.log(`Connecting to WebSocket: ${wsUrl}`);
 
         if (navigator.serviceWorker.controller) {
           console.log("Sending connect message to service worker");
@@ -508,7 +565,7 @@
             type: "CONNECT_WEBSOCKET",
             data: {
               subscriberId: subscriberId,
-              wsUrl: "wss://vibte.xyz/api/v1/ws",
+              wsUrl: wsUrl,
             },
           });
 
