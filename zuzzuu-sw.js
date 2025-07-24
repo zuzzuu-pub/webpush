@@ -215,25 +215,24 @@ function handleWebSocketMessage(event) {
   try {
     const data = JSON.parse(event.data);
     console.log('[SW] WebSocket message received:', data);
-    
+
     if (data.type === 'notification') {
-      // Extract notification data properly
-      const notificationData = data.data || data;
-      
+      // Support both { type: 'notification', ...fields } and { type: 'notification', data: {...fields} }
+      const notificationData = data.data ? data.data : data;
+
       console.log('[SW] Processing notification data:', notificationData);
-      
+
       // Forward notification to main thread with proper structure
       broadcastToClients({
         type: 'NOTIFICATION_RECEIVED',
         data: notificationData
       });
-      
+
       // Show browser notification if permission granted
       if (self.Notification && self.Notification.permission === 'granted') {
-        // Check for image_url in nested template if main image_url is null/empty
-        const imageUrl = notificationData.image_url || (notificationData.template && notificationData.template.image_url) || '';
-        const logoUrl = notificationData.logo_url || (notificationData.template && notificationData.template.logo_url) || 'https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg';
-        
+        const imageUrl = notificationData.image_url || '';
+        const logoUrl = notificationData.logo_url || 'https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg';
+
         const notificationOptions = {
           body: notificationData.message || '',
           icon: logoUrl,
@@ -244,9 +243,9 @@ function handleWebSocketMessage(event) {
           requireInteraction: false,
           silent: false
         };
-        
+
         console.log('[SW] Showing browser notification with options:', notificationOptions);
-        
+
         self.registration.showNotification(
           notificationData.title || 'New Notification from Zuzzuu',
           notificationOptions
