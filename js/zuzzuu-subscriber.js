@@ -15,7 +15,7 @@ class ZuzzuuSubscriber {
       consentDelay: options.consentDelay || 2000,
       onRegistered: options.onRegistered || function() {},
       onError: options.onError || function() {}
-    };f
+    };
 
     // Create CSS styles
     this.createStyles();
