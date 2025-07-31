@@ -1,25 +1,36 @@
 version: '3.8'
 
 services:
-  app:
-    build: .
+  webpush-test:
+    image: nginx:alpine
     container_name: webpush-test
     restart: unless-stopped
     ports:
       - "8443:8443"
       - "8080:8080"
     volumes:
-      # Only mount necessary external files, not the built application
-      - ./certs:/etc/letsencrypt:ro
-      - ./certbot-www:/var/www/certbot:ro
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      # 🔁 Mount existing certs (read-only)
+      - /home/ubuntu/webpush_ui_4/certs:/etc/letsencrypt:ro
+      - /home/ubuntu/webpush_ui_4/certbot-www:/var/www/certbot:ro
+
+      # 📄 Mount your custom Nginx config
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+
+      # 📁 Optional: mount static files if not built into image
+      # - ./dist:/usr/share/nginx/html
+
     healthcheck:
-      test: ["CMD", "sh", "-c", "wget --quiet --tries=1 --spider https://localhost:8443/health --no-check-certificate || wget --quiet --tries=1 --spider http://localhost:8080/health"]
+      test: >
+        sh -c '
+          wget --quiet --tries=1 --spider https://localhost:8443/health --no-check-certificate ||
+          wget --quiet --tries=1 --spider http://localhost:8080/health
+        '
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 10s
 
+# Optional: define logs volume if you want persistent logs
 volumes:
   logs:
     driver: local
