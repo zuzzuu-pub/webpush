@@ -9,10 +9,10 @@ services:
       - "8443:8443"
       - "8080:8080"
     volumes:
-      - ./logs:/var/log/nginx
-      - ./certs/certificate.crt:/etc/nginx/certs/fullchain.pem:ro
-      - ./certs/private.key:/etc/nginx/certs/privkey.pem:ro
-      - ./certs/ca_bundle.crt:/etc/nginx/certs/chain.pem:ro
+      # Only mount necessary external files, not the built application
+      - ./certs:/etc/letsencrypt:ro
+      - ./certbot-www:/var/www/certbot:ro
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
     healthcheck:
       test: ["CMD", "sh", "-c", "wget --quiet --tries=1 --spider https://localhost:8443/health --no-check-certificate || wget --quiet --tries=1 --spider http://localhost:8080/health"]
       interval: 30s
