@@ -1,8 +1,10 @@
-version: '3.8'
+version: "3.8"
 
 services:
   webpush-test:
-    image: nginx:alpine
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: webpush-test
     restart: unless-stopped
     ports:
@@ -13,11 +15,11 @@ services:
       - /home/ubuntu/webpush_ui_4/certs:/etc/letsencrypt:ro
       - /home/ubuntu/webpush_ui_4/certbot-www:/var/www/certbot:ro
 
-      # 📄 Mount your custom Nginx config
+      # 📄 Mount your custom Nginx config (override the one in Dockerfile)
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
 
-      # 📁 Optional: mount static files if not built into image
-      # - ./dist:/usr/share/nginx/html
+      # 📁 Mount static files to serve your content
+      - ./:/usr/share/nginx/html:ro
 
     healthcheck:
       test: >

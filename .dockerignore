@@ -1,22 +1,22 @@
+# Ignore deployment script
+deploy.sh
+
+# Ignore git files
 .git
 .gitignore
-README.md
-.env
+
+# Ignore documentation
+doc.txt
+
+# Ignore environment files
+.env*
+
+# Ignore Docker files (they're handled separately)
 docker-compose.yml
 Dockerfile
-logs/
+
+# Ignore any logs or temporary files
 *.log
+*.tmp
 .DS_Store
 Thumbs.db
-node_modules/
-package*.json
-.vscode/
-doc.txt
-scripts/
-# Ensure these files are included:
-# !sw.js
-# !favicon.ico
-# !favicon.svg
-# !js/
-# !css/
-# !index.html
