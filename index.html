@@ -102,9 +102,13 @@
         <strong>API URL:</strong>
         <span id="api-url">Loading...</span>
       </div>
-      <div style="margin-top: 20px;">
-        <button onclick="connectWebSocket()" class="btn btn-primary">Connect</button>
-        <button onclick="disconnectWebSocket()" class="btn btn-danger">Disconnect</button>
+      <div style="margin-top: 20px">
+        <button onclick="connectWebSocket()" class="btn btn-primary">
+          Connect
+        </button>
+        <button onclick="disconnectWebSocket()" class="btn btn-danger">
+          Disconnect
+        </button>
       </div>
 
       <div id="notifications" style="margin-top: 20px">
@@ -121,34 +125,34 @@
       function getApiBaseUrl() {
         const hostname = window.location.hostname;
         const protocol = window.location.protocol;
-        
+
         // Production environment
-        if (hostname !== 'localhost' && hostname !== '127.0.0.1') {
-          return 'https://vibte.shop/api/v1';
+        if (hostname !== "localhost" && hostname !== "127.0.0.1") {
+          return window.API_URL || "https://vibte.shop/api/v1";
         }
-        
+
         // Development environment - try to detect the correct port
         // Common API server ports: 8002, 8000, 3000, 5000
         const commonPorts = [8002, 8000, 3000, 5000];
-        
+
         // If we're on a specific port, try that port first, then common ports
         const currentPort = window.location.port;
         if (currentPort && !commonPorts.includes(parseInt(currentPort))) {
           commonPorts.unshift(parseInt(currentPort));
         }
-        
+
         // Default to port 8002 for development
         return `${protocol}//${hostname}:8002/api/v1`;
       }
 
       function getWebSocketUrl() {
         const hostname = window.location.hostname;
-        
+
         // Production environment
-        if (hostname !== 'localhost' && hostname !== '127.0.0.1') {
-          return 'wss://vibte.shop/api/v1/ws';
+        if (hostname !== "localhost" && hostname !== "127.0.0.1") {
+          return "wss://vibte.shop/api/v1/ws";
         }
-        
+
         // Development environment
         return `ws://${hostname}:8002/api/v1/ws`;
       }
@@ -166,7 +170,8 @@
 
       document.addEventListener("DOMContentLoaded", async function () {
         // Display current configuration
-        document.getElementById("current-url").textContent = window.location.href;
+        document.getElementById("current-url").textContent =
+          window.location.href;
         document.getElementById("api-url").textContent = getApiBaseUrl();
 
         // Check if we just refreshed after registration
@@ -222,8 +227,8 @@
         // Initialize subscriber system only if not already registered
         zuzzuuSubscriber = new ZuzzuuSubscriber({
           debug: true,
-          apiUrl: getApiBaseUrl() + '/subscriber',
-          pubRegisterUrl: getApiBaseUrl() + '/public/register',
+          apiUrl: getApiBaseUrl() + "/subscriber",
+          pubRegisterUrl: getApiBaseUrl() + "/public/register",
           autoShowConsent: !hasConsent && !isRejected && !isRegistered, // Only show if no previous response
           consentDelay: 2000,
           onRegistered: function (result) {
