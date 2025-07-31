@@ -10,25 +10,30 @@ CURRENT_DIR=$(pwd)
 
 echo "🚀 Deploying webpush to $DEPLOY_DIR"
 
-# Create deployment directory if it doesn't exist
-sudo mkdir -p "$DEPLOY_DIR"
+# Check if we're already in the deployment directory
+if [ "$CURRENT_DIR" = "$DEPLOY_DIR" ]; then
+    echo "📍 Already in deployment directory: $DEPLOY_DIR"
+else
+    # Create deployment directory if it doesn't exist
+    sudo mkdir -p "$DEPLOY_DIR"
 
-# Copy files to deployment directory
-echo "📁 Copying files..."
-sudo cp "$CURRENT_DIR/docker-compose.yml" "$DEPLOY_DIR/"
-sudo cp "$CURRENT_DIR/nginx.conf" "$DEPLOY_DIR/"
-sudo cp "$CURRENT_DIR/Dockerfile" "$DEPLOY_DIR/"
-sudo cp "$CURRENT_DIR/index.html" "$DEPLOY_DIR/"
-sudo cp "$CURRENT_DIR/favicon.svg" "$DEPLOY_DIR/"
-sudo cp "$CURRENT_DIR/test.html" "$DEPLOY_DIR/"
-sudo cp "$CURRENT_DIR/zuzzuu-sw.js" "$DEPLOY_DIR/"
-sudo cp -r "$CURRENT_DIR/js" "$DEPLOY_DIR/"
+    # Copy files to deployment directory
+    echo "📁 Copying files..."
+    sudo cp "$CURRENT_DIR/docker-compose.yml" "$DEPLOY_DIR/"
+    sudo cp "$CURRENT_DIR/nginx.conf" "$DEPLOY_DIR/"
+    sudo cp "$CURRENT_DIR/Dockerfile" "$DEPLOY_DIR/"
+    sudo cp "$CURRENT_DIR/index.html" "$DEPLOY_DIR/"
+    sudo cp "$CURRENT_DIR/favicon.svg" "$DEPLOY_DIR/"
+    sudo cp "$CURRENT_DIR/test.html" "$DEPLOY_DIR/"
+    sudo cp "$CURRENT_DIR/zuzzuu-sw.js" "$DEPLOY_DIR/"
+    sudo cp -r "$CURRENT_DIR/js" "$DEPLOY_DIR/"
 
-# Set proper permissions
-sudo chown -R $USER:$USER "$DEPLOY_DIR"
+    # Set proper permissions
+    sudo chown -R $USER:$USER "$DEPLOY_DIR"
 
-# Change to deployment directory
-cd "$DEPLOY_DIR"
+    # Change to deployment directory
+    cd "$DEPLOY_DIR"
+fi
 
 # Stop existing container if running
 echo "🛑 Stopping existing container..."
