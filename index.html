@@ -14,7 +14,8 @@
     <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
 
     <!-- Zuzzuu JavaScript Files -->
-    <script src="/static/zuzzuu-notification.js"></script>
+    <script src="zuzzuu-notification.js"></script>
+<script src="zuzzuu-subscriber.js"></script>
 
     <style>
       * {
@@ -969,7 +970,7 @@ Your notification system is working perfectly!</textarea
           try {
             this.log("info", "👷 Registering Service Worker...");
             const registration = await navigator.serviceWorker.register(
-              "/static/zuzzuu-sw.js"
+              "zuzzuu-sw.js"
             );
             this.state.serviceWorkerRegistered = true;
             this.log("success", "👷 Service Worker registered successfully");

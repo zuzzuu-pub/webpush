@@ -66,7 +66,7 @@ class ZuzzuuSubscriber {
 
     // Production environment
     if (hostname !== "localhost" && hostname !== "127.0.0.1") {
-      return "https://vibte.xyz/api/v1";
+      return "https://vibte.shop/api/v1";
     }
 
     // Development environment
