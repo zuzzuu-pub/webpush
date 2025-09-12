@@ -11,8 +11,8 @@ class ZuzzuuNotification {
     const defaultLogoUrl = 'https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg';
     
     this.options = {
-      apiUrl: options.apiUrl || 'http://localhost:8000/api/v1',
-      socketUrl: options.socketUrl || 'http://localhost:8000', // Socket.IO URL
+      apiUrl: options.apiUrl || 'http://localhost:8002/api/v1',
+      socketUrl: options.socketUrl || 'http://localhost:8002', // Socket.IO URL
       debug: options.debug || true,
       autoConnect: options.autoConnect !== false,
       heartbeatInterval: options.heartbeatInterval || 30000,
