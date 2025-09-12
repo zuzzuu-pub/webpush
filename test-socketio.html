@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Socket.IO Connection Test</title>
+    <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+      .status {
+        padding: 10px;
+        margin: 10px 0;
+        border-radius: 5px;
+      }
+      .success {
+        background-color: #d4edda;
+        color: #155724;
+      }
+      .error {
+        background-color: #f8d7da;
+        color: #721c24;
+      }
+      .info {
+        background-color: #d1ecf1;
+        color: #0c5460;
+      }
+      .warning {
+        background-color: #fff3cd;
+        color: #856404;
+      }
+      button {
+        padding: 10px 20px;
+        margin: 5px;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        background-color: #007bff;
+        color: white;
+      }
+      button:hover {
+        background-color: #0056b3;
+      }
+      #log {
+        background-color: #f8f9fa;
+        border: 1px solid #dee2e6;
+        padding: 15px;
+        border-radius: 5px;
+        height: 400px;
+        overflow-y: auto;
+        font-family: monospace;
+        font-size: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Socket.IO Connection Test</h1>
+
+    <div id="status" class="status info">
+      Ready to test Socket.IO connection
+    </div>
+
+    <div>
+      <button onclick="testConnection()">Test Socket.IO Connection</button>
+      <button onclick="clearLog()">Clear Log</button>
+      <button onclick="sendTestMessage()">Send Test Message</button>
+      <button onclick="disconnect()">Disconnect</button>
+    </div>
+
+    <h3>Connection Log:</h3>
+    <div id="log"></div>
+
+    <script>
+      let socket = null;
+      let isConnected = false;
+
+      function log(message, type = "info") {
+        const logDiv = document.getElementById("log");
+        const timestamp = new Date().toLocaleTimeString();
+        const logEntry = document.createElement("div");
+        logEntry.style.color =
+          type === "error" ? "red" : type === "success" ? "green" : "black";
+        logEntry.textContent = `[${timestamp}] ${message}`;
+        logDiv.appendChild(logEntry);
+        logDiv.scrollTop = logDiv.scrollHeight;
+        console.log(`[${timestamp}] ${message}`);
+      }
+
+      function updateStatus(message, className) {
+        const statusDiv = document.getElementById("status");
+        statusDiv.textContent = message;
+        statusDiv.className = `status ${className}`;
+      }
+
+      function getSocketUrl() {
+        const hostname = window.location.hostname;
+        if (hostname !== "localhost" && hostname !== "127.0.0.1") {
+          return "https://vibte.shop";
+        }
+        // Always use localhost:8002 for consistency in development
+        return "http://localhost:8002";
+      }
+
+      function testConnection() {
+        if (socket && socket.connected) {
+          log("Already connected to Socket.IO", "warning");
+          return;
+        }
+
+        const socketUrl = getSocketUrl();
+        const subscriberId =
+          localStorage.getItem("zuzzuu_subscriber_id") ||
+          "test-subscriber-" + Date.now();
+
+        log(`Starting Socket.IO connection test...`);
+        log(`Socket URL: ${socketUrl}`);
+        log(`Subscriber ID: ${subscriberId}`);
+
+        updateStatus("Connecting to Socket.IO...", "warning");
+
+        // Create Socket.IO connection with detailed configuration
+        socket = io(socketUrl, {
+          transports: ["polling", "websocket"],
+          upgrade: true,
+          autoConnect: false,
+          forceNew: true,
+          timeout: 30000,
+          reconnection: false,
+          withCredentials: false,
+          query: {
+            subscriber_id: subscriberId,
+            client_type: "test_connection",
+            timestamp: Date.now(),
+          },
+        });
+
+        // Set up all event listeners
+        socket.on("connect", function () {
+          isConnected = true;
+          log("✅ Socket.IO connected successfully!", "success");
+          log(`Socket ID: ${socket.id}`);
+          log(`Transport: ${socket.io.engine.transport.name}`);
+          updateStatus("Connected to Socket.IO", "success");
+
+          // Register subscriber with consistent ID format
+          const subscriberData = {
+            subscriber_id: subscriberId,
+            client_type: "test_connection",
+            timestamp: new Date().toISOString(),
+          };
+
+          log(
+            "📝 Registering subscriber with data:",
+            JSON.stringify(subscriberData)
+          );
+          socket.emit("register_subscriber", subscriberData);
+        });
+
+        socket.on("connect_error", function (error) {
+          isConnected = false;
+          log(`❌ Connection error: ${error.message}`, "error");
+          log(`Error type: ${error.type}`, "error");
+          log(`Error description: ${error.description}`, "error");
+          updateStatus(`Connection failed: ${error.message}`, "error");
+        });
+
+        socket.on("disconnect", function (reason) {
+          isConnected = false;
+          log(`🔌 Disconnected: ${reason}`, "warning");
+          updateStatus("Disconnected from Socket.IO", "warning");
+        });
+
+        socket.on("connection_established", function (data) {
+          log("✅ Connection established event received", "success");
+          log(`Data: ${JSON.stringify(data, null, 2)}`);
+        });
+
+        socket.on("subscriber_registered", function (data) {
+          log("✅ Subscriber registered successfully", "success");
+          log(`Registration data: ${JSON.stringify(data, null, 2)}`);
+
+          // Verify the subscriber ID was registered correctly
+          if (data.subscriber_id === subscriberId) {
+            log("✅ Subscriber ID confirmed on server", "success");
+          } else {
+            log(
+              `⚠️ Subscriber ID mismatch - Expected: ${subscriberId}, Got: ${data.subscriber_id}`,
+              "warning"
+            );
+          }
+        });
+
+        socket.on("registration_error", function (data) {
+          log("❌ Subscriber registration error", "error");
+          log(`Error data: ${JSON.stringify(data, null, 2)}`);
+        });
+
+        socket.on("notification", function (data) {
+          log("🔔 Notification received", "success");
+          log(`Notification: ${JSON.stringify(data, null, 2)}`);
+
+          // Test notification handling
+          updateStatus("✅ Test notification received!", "success");
+        });
+
+        socket.on("heartbeat_response", function (data) {
+          log("💓 Heartbeat response received");
+        });
+
+        socket.on("error", function (error) {
+          log(`⚠️ Socket error: ${error}`, "error");
+        });
+
+        // Add transport upgrade events
+        socket.io.on("upgrade", function (transport) {
+          log(`🔄 Transport upgraded to: ${transport.name}`, "success");
+        });
+
+        socket.io.on("upgradeError", function (error) {
+          log(`❌ Transport upgrade error: ${error}`, "error");
+        });
+
+        // Start the connection
+        log("Attempting to connect...");
+        socket.connect();
+      }
+
+      function sendTestMessage() {
+        if (!socket || !socket.connected) {
+          log("❌ Not connected to Socket.IO", "error");
+          return;
+        }
+
+        const testMessage = {
+          type: "test_message",
+          message: "Hello from test client",
+          timestamp: new Date().toISOString(),
+        };
+
+        log("📤 Sending test message...");
+        socket.emit("message", testMessage);
+      }
+
+      function disconnect() {
+        if (socket) {
+          log("🔌 Disconnecting...");
+          socket.disconnect();
+          socket = null;
+          isConnected = false;
+          updateStatus("Disconnected", "info");
+        }
+      }
+
+      function clearLog() {
+        document.getElementById("log").innerHTML = "";
+      }
+
+      // Auto-start test when page loads
+      document.addEventListener("DOMContentLoaded", function () {
+        log("Socket.IO Connection Test Page Loaded");
+        log('Click "Test Socket.IO Connection" to start the test');
+      });
+    </script>
+  </body>
+</html>
