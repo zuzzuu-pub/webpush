@@ -969,7 +969,7 @@ Your notification system is working perfectly!</textarea
           try {
             this.log("info", "👷 Registering Service Worker...");
             const registration = await navigator.serviceWorker.register(
-              "/static/zuzzuu-sw.js"
+              "zuzzuu-sw.js"
             );
             this.state.serviceWorkerRegistered = true;
             this.log("success", "👷 Service Worker registered successfully");
@@ -1433,3 +1433,4 @@ Your notification system is working perfectly!</textarea
     </script>
   </body>
 </html>
+
