@@ -354,13 +354,13 @@ function broadcastToClients(message) {
     });
 }
 
-// Handle push notifications - Enhanced for browser-closed scenarios
+// Handle push notifications - Enhanced for browser-closed scenarios (Firebase-style)
 self.addEventListener('push', function(event) {
   console.log('[SW] Push notification received, event data:', event.data ? 'present' : 'empty');
 
   let notificationData = {};
 
-  // Parse notification data with enhanced error handling
+  // Parse notification data with enhanced error handling (supports Firebase and custom formats)
   if (event.data) {
     try {
       const rawData = event.data.text();
@@ -368,12 +368,28 @@ self.addEventListener('push', function(event) {
       
       // Try to parse as JSON first
       try {
-        notificationData = JSON.parse(rawData);
-        console.log('[SW] Parsed JSON notification data:', notificationData);
+        const parsedData = JSON.parse(rawData);
+        console.log('[SW] Parsed JSON notification data:', parsedData);
+        
+        // Handle Firebase FCM format: { notification: {...}, data: {...} }
+        if (parsedData.notification) {
+          notificationData = {
+            title: parsedData.notification.title || 'Zuzzuu Notification',
+            message: parsedData.notification.body || 'You have a new notification',
+            url: parsedData.data?.url || parsedData.data?.click_action,
+            icon: parsedData.notification.icon || parsedData.data?.icon,
+            image: parsedData.notification.image || parsedData.data?.image,
+            tag: parsedData.data?.tag || 'zuzzuu-notification',
+            ...parsedData.data // Include any additional data
+          };
+        } else {
+          // Handle custom Zuzzuu format
+          notificationData = parsedData;
+        }
       } catch (jsonError) {
         console.log('[SW] Not JSON, treating as text:', rawData);
         notificationData = {
-          title: 'New Notification',
+          title: 'Zuzzuu Notification',
           message: rawData || 'You have a new notification'
         };
       }
@@ -465,7 +481,7 @@ function showFallbackNotification() {
   });
 }
 
-// Enhanced browser notification display with better options (for push notifications)
+// Enhanced browser notification display with Firebase-style options (for push notifications)
 function showBrowserNotification(notificationData) {
   try {
     // Ensure we have a title
@@ -483,34 +499,46 @@ function showBrowserNotification(notificationData) {
       icon: notificationData.logo_url || notificationData.icon || 'https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg',
       badge: notificationData.logo_url || notificationData.badge || 'https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg',
       image: notificationData.image_url || notificationData.image || undefined,
-      tag: notificationData.id ? `zuzzuu-push-${notificationData.id}` : `zuzzuu-push-notification-${Date.now()}`,
+      tag: notificationData.tag || notificationData.id ? `zuzzuu-push-${notificationData.id}` : `zuzzuu-notification-${Date.now()}`,
       data: {
         // Store essential data only to avoid serialization issues
         id: notificationData.id,
-        url: notificationData.url || notificationData.action_url,
+        url: notificationData.url || notificationData.action_url || notificationData.click_action,
         timestamp: new Date().toISOString(),
         original_data: notificationData,
         source: 'push'
       },
-      requireInteraction: false, // Don't require user interaction
+      requireInteraction: true, // Firebase-style: notification persists until user interaction
       silent: false, // Play notification sound
       renotify: true, // Show even if a notification with same tag exists
       vibrate: [200, 100, 200], // Vibration pattern for mobile
-      actions: [] // Keep empty for now to avoid compatibility issues
+      actions: [] // Will be populated below
     };
 
-    // Add actions if URL is provided
-    if (notificationData.url || notificationData.action_url) {
+    // Add actions similar to Firebase (open/close pattern)
+    if (notificationData.url || notificationData.action_url || notificationData.click_action) {
       options.actions = [
         {
           action: 'open',
           title: 'Open',
           icon: 'https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg'
+        },
+        {
+          action: 'close',
+          title: 'Close'
+        }
+      ];
+    } else {
+      // No URL provided, just add close action
+      options.actions = [
+        {
+          action: 'close',
+          title: 'Close'
         }
       ];
     }
 
-    console.log('[SW] Showing enhanced push notification:', title, options);
+    console.log('[SW] Showing enhanced push notification (Firebase-style):', title, options);
     console.log('[SW] Push notification will display even when browser is closed');
 
     return self.registration.showNotification(title, options)
@@ -575,19 +603,25 @@ function sanitizeForPostMessage(obj) {
   return sanitized;
 }
 
-// Enhanced notification click handling (for both push and WebSocket notifications)
+// Enhanced notification click handling (Firebase-style with proper action support)
 self.addEventListener('notificationclick', function(event) {
-  console.log('[SW] Notification clicked:', event.notification.tag);
+  console.log('[SW] Notification clicked:', event.notification.tag, 'Action:', event.action);
   console.log('[SW] Notification data:', event.notification.data);
   
   // Close the notification
   event.notification.close();
   
+  // Handle close action (like Firebase)
+  if (event.action === 'close') {
+    console.log('[SW] User chose to close notification');
+    return;
+  }
+  
   const data = event.notification.data || {};
   const originalData = data.original_data || data;
   
   // Determine the URL to open
-  let url = data.url || originalData.url || originalData.action_url || '/';
+  let url = data.url || originalData.url || originalData.action_url || originalData.click_action || '/';
   
   // If no specific URL, open the main application
   if (!url || url === '/') {
@@ -597,7 +631,7 @@ self.addEventListener('notificationclick', function(event) {
   console.log('[SW] Opening URL:', url);
 
   event.waitUntil(
-    // First, try to focus an existing window with the same URL
+    // First, try to focus an existing window with the same URL (Firebase pattern)
     self.clients.matchAll({ type: 'window', includeUncontrolled: true })
       .then(clients => {
         // Look for an existing window with the target URL
@@ -631,6 +665,29 @@ self.addEventListener('notificationclick', function(event) {
         console.error('[SW] Error handling notification click:', error);
       })
   );
+});
+
+// Handle notification close events (Firebase-style)
+self.addEventListener('notificationclose', function(event) {
+  console.log('[SW] Notification closed:', event.notification.tag);
+  console.log('[SW] Notification data:', event.notification.data);
+  
+  // Track notification close events (optional analytics)
+  const data = event.notification.data || {};
+  const originalData = data.original_data || data;
+  
+  // Broadcast to clients that notification was closed
+  broadcastToClients({
+    type: 'NOTIFICATION_CLOSED',
+    data: {
+      tag: event.notification.tag,
+      id: data.id,
+      timestamp: new Date().toISOString(),
+      source: data.source || 'unknown'
+    }
+  });
+  
+  console.log('[SW] Notification close event processed');
 });
 
 // Handle background sync (for offline functionality)
