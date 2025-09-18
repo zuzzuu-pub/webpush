@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Zuzzuu Offline/Online Test</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 800px;
+        margin: 50px auto;
+        padding: 20px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+      }
+
+      .container {
+        background: white;
+        color: #333;
+        padding: 30px;
+        border-radius: 12px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+      }
+
+      .header {
+        text-align: center;
+        margin-bottom: 30px;
+      }
+
+      .controls {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 20px;
+        flex-wrap: wrap;
+      }
+
+      .btn {
+        padding: 12px 24px;
+        border: none;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+
+      .btn:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      }
+
+      .btn-primary {
+        background: #6366f1;
+        color: white;
+      }
+
+      .btn-success {
+        background: #10b981;
+        color: white;
+      }
+
+      .btn-warning {
+        background: #f59e0b;
+        color: white;
+      }
+
+      .btn-danger {
+        background: #ef4444;
+        color: white;
+      }
+
+      .info-box {
+        background: #f8fafc;
+        padding: 20px;
+        border-radius: 8px;
+        margin-bottom: 20px;
+        border-left: 4px solid #6366f1;
+      }
+
+      .status {
+        font-weight: bold;
+        margin-bottom: 10px;
+      }
+
+      .online {
+        color: #10b981;
+      }
+
+      .offline {
+        color: #ef4444;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <h1>🌐 Zuzzuu Offline/Online Notification Test</h1>
+        <p>Test the network connectivity notifications</p>
+      </div>
+
+      <div class="info-box">
+        <h3>Test Instructions:</h3>
+        <p>1. Click "Initialize Notifications" to set up the system</p>
+        <p>
+          2. Use browser dev tools to simulate offline/online (F12 > Network tab
+          > Throttling dropdown > Offline)
+        </p>
+        <p>
+          3. Or use the simulate buttons below (these trigger the events
+          manually)
+        </p>
+        <p>
+          4. Watch for notifications in the top-right corner when connectivity
+          changes
+        </p>
+      </div>
+
+      <div class="status" id="connectionStatus">
+        Connection Status: <span id="statusText" class="online">Online</span>
+      </div>
+
+      <div class="controls">
+        <button class="btn btn-primary" onclick="initializeNotifications()">
+          Initialize Notifications
+        </button>
+        <button class="btn btn-success" onclick="testNotification()">
+          Test Notification
+        </button>
+        <button class="btn btn-warning" onclick="simulateOffline()">
+          Simulate Offline
+        </button>
+        <button class="btn btn-success" onclick="simulateOnline()">
+          Simulate Online
+        </button>
+        <button class="btn btn-danger" onclick="clearNotifications()">
+          Clear Notifications
+        </button>
+      </div>
+
+      <div
+        id="logArea"
+        style="
+          background: #1e293b;
+          color: white;
+          padding: 15px;
+          border-radius: 8px;
+          font-family: monospace;
+          font-size: 12px;
+          max-height: 300px;
+          overflow-y: auto;
+        "
+      >
+        <div>🚀 Ready to test offline/online notifications...</div>
+      </div>
+    </div>
+
+    <!-- Load the notification system -->
+    <script src="zuzzuu-notification.js"></script>
+
+    <script>
+      let notificationSystem = null;
+
+      function log(message) {
+        const logArea = document.getElementById("logArea");
+        const timestamp = new Date().toLocaleTimeString();
+        logArea.innerHTML += `<div>[${timestamp}] ${message}</div>`;
+        logArea.scrollTop = logArea.scrollHeight;
+      }
+
+      function updateConnectionStatus() {
+        const statusText = document.getElementById("statusText");
+        const isOnline = navigator.onLine;
+        statusText.textContent = isOnline ? "Online" : "Offline";
+        statusText.className = isOnline ? "online" : "offline";
+        log(`📡 Connection status updated: ${isOnline ? "Online" : "Offline"}`);
+      }
+
+      function initializeNotifications() {
+        try {
+          log("🔄 Initializing Zuzzuu Notification System...");
+
+          // Create subscriber ID
+          let subscriberId = localStorage.getItem("zuzzuu_subscriber_id");
+          if (!subscriberId) {
+            subscriberId = "test-" + Math.random().toString(36).substr(2, 9);
+            localStorage.setItem("zuzzuu_subscriber_id", subscriberId);
+          }
+
+          notificationSystem = new ZuzzuuNotification({
+            debug: true,
+            autoConnect: false, // Don't auto-connect for this test
+            apiUrl: "http://localhost:8002/api/v1",
+            socketUrl: "http://localhost:8002",
+          });
+
+          log("✅ Notification system initialized successfully");
+          log(`📱 Subscriber ID: ${subscriberId.substring(0, 8)}...`);
+        } catch (error) {
+          log(`❌ Error initializing notifications: ${error.message}`);
+        }
+      }
+
+      function testNotification() {
+        if (!notificationSystem) {
+          log("⚠️ Please initialize notifications first");
+          return;
+        }
+
+        const testData = {
+          id: Date.now(),
+          title: "Test Notification",
+          message:
+            "This is a test notification to verify the system is working!",
+          logo_url:
+            "https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg",
+          timestamp: new Date().toISOString(),
+        };
+
+        log("🧪 Sending test notification...");
+        notificationSystem.handleNotification(testData);
+      }
+
+      function simulateOffline() {
+        if (!notificationSystem) {
+          log("⚠️ Please initialize notifications first");
+          return;
+        }
+
+        log("📡 Simulating offline event...");
+        // Manually trigger the offline event
+        window.dispatchEvent(new Event("offline"));
+      }
+
+      function simulateOnline() {
+        if (!notificationSystem) {
+          log("⚠️ Please initialize notifications first");
+          return;
+        }
+
+        log("🌐 Simulating online event...");
+        // Manually trigger the online event
+        window.dispatchEvent(new Event("online"));
+      }
+
+      function clearNotifications() {
+        if (notificationSystem && notificationSystem.notifications) {
+          notificationSystem.notifications.forEach((n) => {
+            if (n.element && n.element.parentNode) {
+              n.element.parentNode.removeChild(n.element);
+            }
+          });
+          notificationSystem.notifications = [];
+          log("🧹 Cleared all notifications");
+        }
+      }
+
+      // Set up real network event listeners
+      window.addEventListener("online", () => {
+        updateConnectionStatus();
+        log("🌐 Real ONLINE event detected");
+      });
+
+      window.addEventListener("offline", () => {
+        updateConnectionStatus();
+        log("📡 Real OFFLINE event detected");
+      });
+
+      // Initialize connection status on page load
+      document.addEventListener("DOMContentLoaded", () => {
+        updateConnectionStatus();
+        log("📄 Page loaded and ready for testing");
+      });
+    </script>
+  </body>
+</html>
