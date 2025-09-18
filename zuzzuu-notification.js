@@ -304,6 +304,63 @@ class ZuzzuuNotification {
       .zuzzuu-notification.closing {
         animation: zuzzuu-fade-out 0.3s ease-in forwards;
       }
+      
+      /* Connectivity notification styles */
+      .zuzzuu-connectivity-notification {
+        border-left: 4px solid #6366f1;
+      }
+      
+      .zuzzuu-connectivity-notification.zuzzuu-connectivity-online {
+        border-left-color: #10b981;
+        background-color: #f0fdf4;
+      }
+      
+      .zuzzuu-connectivity-notification.zuzzuu-connectivity-offline {
+        border-left-color: #ef4444;
+        background-color: #fef2f2;
+      }
+      
+      .zuzzuu-connectivity-notification .zuzzuu-notification-title {
+        color: #1f2937;
+        font-weight: 700;
+      }
+      
+      .zuzzuu-connectivity-notification.zuzzuu-connectivity-online .zuzzuu-notification-title {
+        color: #065f46;
+      }
+      
+      .zuzzuu-connectivity-notification.zuzzuu-connectivity-offline .zuzzuu-notification-title {
+        color: #991b1b;
+      }
+      
+      .zuzzuu-connectivity-notification .zuzzuu-notification-message {
+        color: #4b5563;
+      }
+      
+      .zuzzuu-connectivity-notification.zuzzuu-connectivity-online .zuzzuu-notification-message {
+        color: #047857;
+      }
+      
+      .zuzzuu-connectivity-notification.zuzzuu-connectivity-offline .zuzzuu-notification-message {
+        color: #dc2626;
+      }
+      
+      .zuzzuu-connectivity-icon {
+        border-radius: 50% !important;
+        font-size: 20px !important;
+        animation: connectivity-pulse 2s infinite;
+      }
+      
+      @keyframes connectivity-pulse {
+        0%, 100% {
+          transform: scale(1);
+          opacity: 1;
+        }
+        50% {
+          transform: scale(1.1);
+          opacity: 0.8;
+        }
+      }
     `;
     
     document.head.appendChild(styleElement);
@@ -458,6 +515,14 @@ class ZuzzuuNotification {
       this.isOnline = true;
       this.log('Browser is online');
       
+      // Show online notification
+      this.showConnectivityNotification({
+        title: 'Connection Restored',
+        message: 'Your internet connection has been restored. You will now receive notifications again.',
+        type: 'online',
+        icon: '🌐'
+      });
+      
       if (!this.connected) {
         this.connect();
       }
@@ -466,6 +531,14 @@ class ZuzzuuNotification {
     window.addEventListener('offline', () => {
       this.isOnline = false;
       this.log('Browser is offline');
+      
+      // Show offline notification
+      this.showConnectivityNotification({
+        title: 'Connection Lost',
+        message: 'No internet connection detected. You may not receive new notifications until connection is restored.',
+        type: 'offline',
+        icon: '📡'
+      });
       
       if (this.connected) {
         this.sendStatusUpdate('offline');
@@ -705,6 +778,113 @@ class ZuzzuuNotification {
       // Remove from notifications array
       this.notifications = this.notifications.filter(n => n.element !== element);
     }, 300);
+  }
+
+  /**
+   * Show connectivity notification (special styling for network status)
+   */
+  showConnectivityNotification(options) {
+    const { title, message, type, icon } = options;
+    
+    this.log(`Showing connectivity notification (${type}):`, { title, message });
+    
+    // Create notification data for connectivity alert
+    const notificationData = {
+      id: `connectivity-${type}-${Date.now()}`,
+      title: title,
+      message: message,
+      logo_url: this.options.logoUrl,
+      connectivity_type: type, // Special flag for connectivity notifications
+      icon: icon || '📡'
+    };
+
+    // Ensure notification container exists and is attached to DOM
+    if (!this.notificationContainer || !this.notificationContainer.parentNode) {
+      this.log('Notification container missing, recreating');
+      this.createNotificationContainer();
+    }
+    
+    // Create notification element
+    const notificationElement = document.createElement('div');
+    notificationElement.className = `zuzzuu-notification zuzzuu-connectivity-notification zuzzuu-connectivity-${type}`;
+    notificationElement.dataset.id = notificationData.id;
+    
+    this.log('Created connectivity notification element with ID:', notificationElement.dataset.id);
+    
+    // Create close button
+    const closeButton = document.createElement('div');
+    closeButton.className = 'zuzzuu-notification-close';
+    closeButton.innerHTML = '&times;';
+    closeButton.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.closeNotification(notificationElement);
+    });
+    notificationElement.appendChild(closeButton);
+    
+    // Create notification preview container (no image for connectivity notifications)
+    const previewContainer = document.createElement('div');
+    previewContainer.className = 'zuzzuu-notification-preview';
+    
+    // Create icon container with the provided icon
+    const iconContainer = document.createElement('div');
+    iconContainer.className = 'zuzzuu-notification-icon zuzzuu-connectivity-icon';
+    iconContainer.textContent = icon || '📡';
+    iconContainer.style.fontSize = '20px';
+    iconContainer.style.backgroundColor = type === 'online' ? '#10b981' : '#ef4444';
+    iconContainer.style.color = 'white';
+    iconContainer.style.display = 'flex';
+    iconContainer.style.alignItems = 'center';
+    iconContainer.style.justifyContent = 'center';
+    previewContainer.appendChild(iconContainer);
+    
+    // Create content container
+    const contentContainer = document.createElement('div');
+    contentContainer.className = 'zuzzuu-notification-content';
+    
+    // Create title
+    const titleElement = document.createElement('div');
+    titleElement.className = 'zuzzuu-notification-title';
+    titleElement.textContent = title;
+    titleElement.title = title; // Add tooltip
+    contentContainer.appendChild(titleElement);
+    
+    // Create message
+    const messageElement = document.createElement('div');
+    messageElement.className = 'zuzzuu-notification-message';
+    messageElement.textContent = message;
+    messageElement.title = message; // Add tooltip
+    contentContainer.appendChild(messageElement);
+    
+    previewContainer.appendChild(contentContainer);
+    notificationElement.appendChild(previewContainer);
+    
+    // Add click event (just close the notification for connectivity alerts)
+    notificationElement.addEventListener('click', () => {
+      this.log('Connectivity notification clicked:', notificationData);
+      this.closeNotification(notificationElement);
+    });
+    
+    // Add to container
+    this.notificationContainer.appendChild(notificationElement);
+    
+    // Store notification
+    this.notifications.push({
+      id: notificationElement.dataset.id,
+      element: notificationElement,
+      data: notificationData
+    });
+    
+    this.log('Connectivity notification added to DOM. Container children count:', this.notificationContainer.children.length);
+    
+    // Force a reflow to ensure the element is rendered
+    notificationElement.offsetHeight;
+    
+    // Auto-close after longer time for connectivity notifications (10 seconds)
+    setTimeout(() => {
+      if (notificationElement.parentNode) {
+        this.closeNotification(notificationElement);
+      }
+    }, 10000);
   }
   
   /**
