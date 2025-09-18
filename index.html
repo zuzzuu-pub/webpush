@@ -278,50 +278,6 @@
         margin-top: 4px;
       }
 
-      .notification-demo {
-        background: #f8fafc;
-        border-radius: 12px;
-        padding: 20px;
-        margin-bottom: 20px;
-      }
-
-      .notification-form {
-        display: grid;
-        gap: 15px;
-      }
-
-      .form-group {
-        display: flex;
-        flex-direction: column;
-        gap: 5px;
-      }
-
-      .form-group label {
-        font-weight: 600;
-        color: #374151;
-        font-size: 0.9rem;
-      }
-
-      .form-group input,
-      .form-group textarea {
-        padding: 12px;
-        border: 2px solid #e5e7eb;
-        border-radius: 8px;
-        font-size: 0.9rem;
-        transition: border-color 0.2s ease;
-      }
-
-      .form-group input:focus,
-      .form-group textarea:focus {
-        outline: none;
-        border-color: #6366f1;
-      }
-
-      .form-group textarea {
-        resize: vertical;
-        min-height: 80px;
-      }
-
       .toast {
         position: fixed;
         top: 20px;
@@ -491,6 +447,10 @@
               <p id="serviceWorkerStatus">Not Available</p>
             </div>
             <div class="status-item">
+              <h3>Browser Notifications</h3>
+              <p id="notificationPermissionStatus">Not Requested</p>
+            </div>
+            <div class="status-item">
               <h3>Subscriber ID</h3>
               <p id="subscriberIdStatus">Not Set</p>
             </div>
@@ -511,8 +471,18 @@
             <button class="btn btn-secondary" id="registerSwBtn">
               Register Service Worker
             </button>
+            <button class="btn btn-success" id="enableNotificationsBtn">
+              Enable Browser Notifications
+            </button>
             <button class="btn btn-warning" id="testNotificationBtn">
               Test Notification
+            </button>
+            <button
+              class="btn btn-secondary"
+              id="testPushBtn"
+              style="display: none"
+            >
+              Test Push Notification
             </button>
           </div>
 
@@ -529,67 +499,6 @@
               <div class="metric-value" id="uptimeCount">0s</div>
               <div class="metric-label">Uptime</div>
             </div>
-          </div>
-        </div>
-
-        <!-- Notification Demo Card -->
-        <div class="card">
-          <h2>📱 Notification Demo</h2>
-
-          <div class="notification-demo">
-            <form class="notification-form" id="notificationForm">
-              <div class="form-group">
-                <label for="notifTitle">Title</label>
-                <input
-                  type="text"
-                  id="notifTitle"
-                  placeholder="Enter notification title"
-                  value="Welcome to Zuzzuu!"
-                />
-              </div>
-              <div class="form-group">
-                <label for="notifMessage">Message</label>
-                <textarea
-                  id="notifMessage"
-                  placeholder="Enter notification message"
-                >
-Your notification system is working perfectly!</textarea
-                >
-              </div>
-              <div class="form-group">
-                <label for="notifUrl">Action URL (optional)</label>
-                <input
-                  type="url"
-                  id="notifUrl"
-                  placeholder="https://example.com"
-                />
-              </div>
-              <div class="form-group">
-                <label for="notifImage">Image URL (optional)</label>
-                <input
-                  type="url"
-                  id="notifImage"
-                  placeholder="https://example.com/image.jpg"
-                />
-              </div>
-              <div class="controls">
-                <button type="submit" class="btn btn-success">
-                  <span id="sendNotifText">Send Notification</span>
-                  <span
-                    class="loading"
-                    id="sendNotifLoading"
-                    style="display: none"
-                  ></span>
-                </button>
-                <button
-                  type="button"
-                  class="btn btn-secondary"
-                  id="clearFormBtn"
-                >
-                  Clear Form
-                </button>
-              </div>
-            </form>
           </div>
         </div>
       </div>
@@ -676,6 +585,7 @@ Your notification system is working perfectly!</textarea
           this.setupEventListeners();
           this.loadStoredData();
           this.checkServiceWorker();
+          this.checkNotificationPermission();
           this.updateUI();
           this.startUptimeCounter();
           this.setInitialTimestamp();
@@ -850,17 +760,12 @@ Your notification system is working perfectly!</textarea
           document
             .getElementById("testNotificationBtn")
             .addEventListener("click", () => this.testNotification());
-
-          // Notification form
           document
-            .getElementById("notificationForm")
-            .addEventListener("submit", (e) => {
-              e.preventDefault();
-              this.sendCustomNotification();
-            });
+            .getElementById("enableNotificationsBtn")
+            .addEventListener("click", () => this.enableBrowserNotifications());
           document
-            .getElementById("clearFormBtn")
-            .addEventListener("click", () => this.clearNotificationForm());
+            .getElementById("testPushBtn")
+            .addEventListener("click", () => this.testPushNotification());
 
           // Log controls
           document
@@ -966,6 +871,179 @@ Your notification system is working perfectly!</textarea
             }
           } else {
             this.log("warning", "👷 Service Worker not supported");
+          }
+        },
+
+        // Show test browser notification to confirm it works
+        showTestBrowserNotification() {
+          const testData = {
+            id: "browser-test-" + Date.now(),
+            title: "Notifications Enabled!",
+            message:
+              "Great! You will now receive browser notifications even when this page is closed.",
+            logo_url:
+              "https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg",
+            timestamp: new Date().toISOString(),
+          };
+
+          if (window.zuzzuuNotification) {
+            window.zuzzuuNotification.handleNotification(testData);
+          }
+
+          this.log(
+            "success",
+            "🔔 Test browser notification shown after permission grant"
+          );
+        },
+
+        // Check notification permission
+        async checkNotificationPermission() {
+          if (typeof Notification === "undefined") {
+            this.log(
+              "warning",
+              "🔔 Notifications not supported in this browser"
+            );
+            return;
+          }
+
+          const permission = Notification.permission;
+          this.log("info", `🔔 Current notification permission: ${permission}`);
+
+          if (permission === "granted") {
+            this.log("success", "✅ Browser notifications are enabled");
+          } else if (permission === "denied") {
+            this.log("warning", "⚠️ Browser notifications are denied");
+          } else {
+            this.log("info", "🔔 Browser notifications not yet requested");
+          }
+        },
+
+        // Enable browser notifications
+        async enableBrowserNotifications() {
+          if (typeof Notification === "undefined") {
+            this.showToast(
+              "Not Supported",
+              "Browser notifications are not supported in this browser",
+              "error"
+            );
+            return;
+          }
+
+          if (Notification.permission === "granted") {
+            this.showToast(
+              "Already Enabled",
+              "Browser notifications are already enabled",
+              "success"
+            );
+            this.updateUI();
+            return;
+          }
+
+          if (Notification.permission === "denied") {
+            this.showToast(
+              "Permission Denied",
+              "Browser notifications have been denied. Please enable them manually in browser settings.",
+              "error"
+            );
+            this.log(
+              "warning",
+              "⚠️ Cannot request permission - already denied"
+            );
+            return;
+          }
+
+          try {
+            this.log("info", "🔔 Requesting notification permission...");
+
+            // Show loading state
+            const btn = document.getElementById("enableNotificationsBtn");
+            const originalText = btn.textContent;
+            btn.textContent = "Requesting Permission...";
+            btn.disabled = true;
+
+            const permission = await Notification.requestPermission();
+
+            this.log("info", `🔔 Permission request result: ${permission}`);
+
+            if (permission === "granted") {
+              this.log("success", "✅ Browser notification permission granted");
+              this.showToast(
+                "Permission Granted",
+                "Browser notifications have been enabled successfully",
+                "success"
+              );
+
+              // Set up push notifications now that permission is granted
+              if (
+                window.zuzzuuNotification &&
+                window.zuzzuuNotification.setupPushNotifications
+              ) {
+                window.zuzzuuNotification
+                  .setupPushNotifications()
+                  .then(() => {
+                    this.log(
+                      "success",
+                      "✅ Push notifications set up successfully after permission grant"
+                    );
+                  })
+                  .catch((error) => {
+                    this.log(
+                      "error",
+                      `❌ Push notification setup failed: ${error.message}`
+                    );
+                  });
+              }
+
+              // Store consent
+              localStorage.setItem("zuzzuu_notification_consent", "true");
+              localStorage.removeItem("zuzzuu_notification_rejected");
+
+              // Show a test notification to confirm it works
+              setTimeout(() => {
+                this.showTestBrowserNotification();
+              }, 1000);
+            } else if (permission === "denied") {
+              this.log("warning", "⚠️ Browser notification permission denied");
+              this.showToast(
+                "Permission Denied",
+                "Browser notifications have been denied. Please enable them manually in browser settings.",
+                "error"
+              );
+
+              // Store rejection
+              localStorage.setItem("zuzzuu_notification_rejected", "true");
+              localStorage.removeItem("zuzzuu_notification_consent");
+            } else {
+              this.log(
+                "warning",
+                "⚠️ Notification permission request returned default/unknown"
+              );
+              this.showToast(
+                "Permission Request",
+                "Permission request completed but status is unclear. Please try again.",
+                "warning"
+              );
+            }
+
+            // Reset button state
+            btn.textContent = originalText;
+            btn.disabled = false;
+            this.updateUI();
+          } catch (error) {
+            this.log(
+              "error",
+              `❌ Error requesting notification permission: ${error.message}`
+            );
+            this.showToast(
+              "Permission Error",
+              `Failed to request notification permission: ${error.message}`,
+              "error"
+            );
+
+            // Reset button state
+            const btn = document.getElementById("enableNotificationsBtn");
+            btn.textContent = "Enable Browser Notifications";
+            btn.disabled = false;
           }
         },
 
@@ -1160,63 +1238,6 @@ Your notification system is working perfectly!</textarea
           this.updateUI();
         },
 
-        // Send custom notification
-        async sendCustomNotification() {
-          const notificationData = {
-            id: Date.now(),
-            title:
-              document.getElementById("notifTitle").value ||
-              "Custom Notification",
-            message:
-              document.getElementById("notifMessage").value || "Custom message",
-            url: document.getElementById("notifUrl").value || "",
-            image_url: document.getElementById("notifImage").value || "",
-            logo_url:
-              "https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg",
-            timestamp: new Date().toISOString(),
-          };
-
-          // Show loading
-          document.getElementById("sendNotifText").style.display = "none";
-          document.getElementById("sendNotifLoading").style.display =
-            "inline-block";
-
-          try {
-            this.state.notificationCount++;
-            this.log(
-              "info",
-              "📤 Sending custom notification",
-              notificationData
-            );
-            this.handleNotification(notificationData);
-            this.showToast(
-              "Notification Sent",
-              "Custom notification displayed",
-              "success"
-            );
-            this.updateUI();
-          } catch (error) {
-            this.log(
-              "error",
-              `📤 Failed to send notification: ${error.message}`
-            );
-            this.showToast("Send Failed", error.message, "error");
-          } finally {
-            // Hide loading
-            document.getElementById("sendNotifText").style.display = "inline";
-            document.getElementById("sendNotifLoading").style.display = "none";
-          }
-        },
-
-        // Clear notification form
-        clearNotificationForm() {
-          document.getElementById("notifTitle").value = "";
-          document.getElementById("notifMessage").value = "";
-          document.getElementById("notifUrl").value = "";
-          document.getElementById("notifImage").value = "";
-          this.log("info", "🧹 Notification form cleared");
-        },
-
         // Update UI
         updateUI() {
           // System status indicator
@@ -1251,6 +1272,52 @@ Your notification system is working perfectly!</textarea
             .subscriberId
             ? `${this.state.subscriberId.substring(0, 8)}...`
             : "Not Set";
+
+          // Update notification permission status
+          const notificationPermissionStatus = document.getElementById(
+            "notificationPermissionStatus"
+          );
+          if (notificationPermissionStatus) {
+            if (typeof Notification === "undefined") {
+              notificationPermissionStatus.textContent = "Not Supported";
+            } else {
+              const permission = Notification.permission;
+              switch (permission) {
+                case "granted":
+                  notificationPermissionStatus.textContent = "Granted";
+                  document.getElementById("testPushBtn").style.display =
+                    "inline-flex";
+                  document.getElementById(
+                    "enableNotificationsBtn"
+                  ).style.display = "none";
+                  break;
+                case "denied":
+                  notificationPermissionStatus.textContent = "Denied";
+                  document.getElementById("testPushBtn").style.display = "none";
+                  document.getElementById(
+                    "enableNotificationsBtn"
+                  ).textContent = "Permission Denied";
+                  document.getElementById(
+                    "enableNotificationsBtn"
+                  ).disabled = true;
+                  break;
+                case "default":
+                default:
+                  notificationPermissionStatus.textContent = "Not Requested";
+                  document.getElementById("testPushBtn").style.display = "none";
+                  document.getElementById(
+                    "enableNotificationsBtn"
+                  ).style.display = "inline-flex";
+                  document.getElementById(
+                    "enableNotificationsBtn"
+                  ).disabled = false;
+                  document.getElementById(
+                    "enableNotificationsBtn"
+                  ).textContent = "Enable Browser Notifications";
+                  break;
+              }
+            }
+          }
 
           // Button states
           const connectBtn = document.getElementById("connectBtn");
