@@ -1,9 +1,14 @@
 /**
  * Zuzzuu Service Worker
- * Handles push notifications and background sync
+ * Handles push notifications, WebSocket connections, and background sync
  */
 
+let socket = null;
+let isConnected = false;
 let subscriberId = null;
+let connectionInProgress = false;
+let lastConnectionAttempt = 0;
+const CONNECTION_COOLDOWN = 5000; // 5 seconds between connection attempts
 
 // Service Worker event listeners
 self.addEventListener('install', function(event) {
@@ -26,6 +31,21 @@ self.addEventListener('message', function(event) {
   console.log('[SW] Received message:', type, data);
   
   switch (type) {
+    case 'CONNECT_SOCKETIO':
+      connectSocketIO(data.subscriberId, data.socketUrl);
+      break;
+    case 'DISCONNECT_SOCKETIO':
+      disconnectSocketIO();
+      break;
+    case 'CONNECT_WEBSOCKET':
+      connectWebSocket(data.subscriberId, data.wsUrl);
+      break;
+    case 'DISCONNECT_WEBSOCKET':
+      disconnectWebSocket();
+      break;
+    case 'UPDATE_SUBSCRIBER_STATUS':
+      updateSubscriberStatus(data.status);
+      break;
     case 'SET_SUBSCRIBER_ID':
       subscriberId = data.subscriberId;
       console.log('[SW] Subscriber ID set:', subscriberId);
@@ -46,16 +66,293 @@ self.addEventListener('message', function(event) {
         });
       });
       break;
+    case 'GET_CONNECTION_STATUS':
+      if (event.ports && event.ports[0]) {
+        event.ports[0].postMessage({ 
+          type: 'CONNECTION_STATUS', 
+          connected: isConnected,
+          subscriberId: subscriberId
+        });
+      }
+      break;
     case 'GET_STATUS':
       if (event.ports && event.ports[0]) {
         event.ports[0].postMessage({ 
           type: 'STATUS_RESPONSE', 
-          subscriberId: subscriberId
+          subscriberId: subscriberId,
+          connected: isConnected
         });
       }
       break;
   }
 });
+
+// Socket.IO Connection Functions
+function connectSocketIO(subId, socketUrl) {
+  // For now, Socket.IO connection is handled by the main thread
+  // This is a placeholder for future Socket.IO service worker integration
+  console.log('[SW] Socket.IO connection requested (handled by main thread)');
+  subscriberId = subId;
+  
+  broadcastToClients({
+    type: 'SOCKETIO_CONNECTED',
+    data: { subscriberId: subscriberId }
+  });
+}
+
+function disconnectSocketIO() {
+  console.log('[SW] Socket.IO disconnection requested');
+  isConnected = false;
+  
+  broadcastToClients({
+    type: 'SOCKETIO_DISCONNECTED'
+  });
+}
+
+// WebSocket Connection Functions
+function connectWebSocket(subId, wsUrl) {
+  // Prevent duplicate connections
+  if (connectionInProgress) {
+    console.log('[SW] Connection already in progress, ignoring request');
+    return;
+  }
+  
+  if (isConnected && subscriberId === subId) {
+    console.log('[SW] Already connected to same subscriber, ignoring request');
+    broadcastToClients({ type: 'WEBSOCKET_CONNECTED' });
+    return;
+  }
+  
+  // Implement connection cooldown
+  const now = Date.now();
+  if (now - lastConnectionAttempt < CONNECTION_COOLDOWN) {
+    console.log('[SW] Connection cooldown active, ignoring request');
+    return;
+  }
+  
+  lastConnectionAttempt = now;
+  connectionInProgress = true;
+  subscriberId = subId;
+  
+  // Close existing connection if different subscriber
+  if (socket && socket.readyState === WebSocket.OPEN && subscriberId !== subId) {
+    console.log('[SW] Closing existing connection for different subscriber');
+    socket.close();
+  }
+  
+  try {
+    const url = `${wsUrl}/${subscriberId}`;
+    console.log('[SW] Connecting to WebSocket:', url);
+    
+    socket = new WebSocket(url);
+    
+    socket.onopen = function() {
+      console.log('[SW] WebSocket connected');
+      isConnected = true;
+      connectionInProgress = false;
+      
+      // Store connection state
+      broadcastToClients({ 
+        type: 'STORE_CONNECTION_STATE',
+        data: { connected: true, subscriberId: subscriberId }
+      });
+      
+      broadcastToClients({ type: 'WEBSOCKET_CONNECTED' });
+    };
+    
+    socket.onmessage = function(event) {
+      console.log('[SW] WebSocket message:', event.data);
+      handleWebSocketMessage(event);
+    };
+    
+    socket.onclose = function(event) {
+      console.log('[SW] WebSocket disconnected:', event.code, event.reason);
+      isConnected = false;
+      connectionInProgress = false;
+      
+      // Update stored connection state
+      broadcastToClients({ 
+        type: 'STORE_CONNECTION_STATE',
+        data: { connected: false, subscriberId: null }
+      });
+      
+      broadcastToClients({ type: 'WEBSOCKET_DISCONNECTED' });
+      
+      // Only attempt to reconnect for unexpected disconnections
+      if (event.code !== 1000 && event.code !== 1001) {
+        console.log('[SW] Unexpected disconnection, will attempt reconnect after delay');
+        setTimeout(() => {
+          if (!isConnected && !connectionInProgress) {
+            connectWebSocket(subscriberId, wsUrl.replace(`/${subscriberId}`, ''));
+          }
+        }, 10000); // 10 second delay for reconnection
+      }
+    };
+    
+    socket.onerror = function(error) {
+      console.error('[SW] WebSocket error:', error);
+      isConnected = false;
+      connectionInProgress = false;
+      broadcastToClients({ type: 'WEBSOCKET_ERROR', data: { error: error.message || 'WebSocket connection failed' } });
+    };
+    
+  } catch (error) {
+    console.error('[SW] Error creating WebSocket:', error);
+    connectionInProgress = false;
+    broadcastToClients({ type: 'WEBSOCKET_ERROR', data: { error: error.message || 'Failed to create WebSocket' } });
+  }
+}
+
+function disconnectWebSocket() {
+  connectionInProgress = false;
+  
+  if (socket) {
+    socket.close(1000, 'Service worker disconnect');
+    socket = null;
+  }
+  
+  isConnected = false;
+  subscriberId = null;
+  
+  // Clear stored connection state
+  broadcastToClients({ 
+    type: 'STORE_CONNECTION_STATE',
+    data: { connected: false, subscriberId: null }
+  });
+}
+
+// Handle WebSocket messages and show real-time notifications
+function handleWebSocketMessage(event) {
+  try {
+    const data = JSON.parse(event.data);
+    console.log('[SW] WebSocket message received:', data);
+
+    if (data.type === 'notification') {
+      // Support both { type: 'notification', ...fields } and { type: 'notification', data: {...fields} }
+      const notificationData = data.data ? data.data : data;
+
+      console.log('[SW] Processing WebSocket notification data:', notificationData);
+
+      // Forward notification to main thread
+      broadcastToClients({
+        type: 'NOTIFICATION_RECEIVED',
+        data: notificationData
+      });
+
+      // Show browser notification immediately for real-time notifications
+      showBrowserNotificationFromWebSocket(notificationData);
+      
+    } else if (data.type === 'connection_established') {
+      console.log('[SW] WebSocket connection established');
+      broadcastToClients({
+        type: 'WEBSOCKET_CONNECTED',
+        data: { subscriberId: subscriberId }
+      });
+    } else if (data.type === 'heartbeat_response') {
+      console.log('[SW] Heartbeat response received');
+    } else if (data.type === 'echo') {
+      console.log('[SW] Echo response received:', data);
+    }
+  } catch (error) {
+    console.error('[SW] Error handling WebSocket message:', error);
+  }
+}
+
+// Show browser notification from WebSocket data
+function showBrowserNotificationFromWebSocket(notificationData) {
+  try {
+    // Check for image_url in nested template if main image_url is null/empty
+    const logoUrl = notificationData.logo_url || 
+                   (notificationData.template && notificationData.template.logo_url) || 
+                   'https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg';
+    const imageUrl = notificationData.image_url || 
+                    (notificationData.template && notificationData.template.image_url) || 
+                    '';
+    
+    const title = notificationData.title || 'New Notification from Zuzzuu';
+    const options = {
+      body: notificationData.message || '',
+      icon: logoUrl,
+      badge: 'https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg',
+      image: imageUrl,
+      tag: notificationData.id || 'zuzzuu-websocket-notification-' + Date.now(),
+      data: notificationData,
+      requireInteraction: false,
+      silent: false,
+      renotify: true,
+      vibrate: [200, 100, 200]
+    };
+    
+    console.log('[SW] Showing WebSocket notification:', title, options);
+    
+    self.registration.showNotification(title, options)
+      .then(() => {
+        console.log('[SW] WebSocket notification displayed successfully');
+      })
+      .catch(error => {
+        console.error('[SW] Failed to show WebSocket notification:', error);
+      });
+      
+  } catch (error) {
+    console.error('[SW] Error showing WebSocket notification:', error);
+  }
+}
+
+// Update subscriber status via WebSocket
+function updateSubscriberStatus(status) {
+  if (socket && socket.readyState === WebSocket.OPEN) {
+    console.log(`[SW] Updating subscriber status to: ${status}`);
+    socket.send(JSON.stringify({
+      type: 'status_update',
+      status: status,
+      timestamp: new Date().toISOString()
+    }));
+  }
+}
+
+// Enhanced broadcasting with better error handling
+function broadcastToClients(message) {
+  return self.clients.matchAll({ includeUncontrolled: true, type: 'window' })
+    .then(clients => {
+      console.log(`[SW] Broadcasting message to ${clients.length} clients:`, message.type);
+      
+      if (clients.length === 0) {
+        console.log('[SW] No clients to broadcast to - browser likely closed');
+        return Promise.resolve(false);
+      }
+
+      const promises = clients.map(client => {
+        return new Promise((resolve) => {
+          try {
+            // Sanitize the message before sending to avoid DataCloneError
+            const sanitizedMessage = sanitizeForPostMessage(message);
+            client.postMessage(sanitizedMessage);
+            console.log('[SW] Message sent to client successfully');
+            resolve(true);
+          } catch (error) {
+            console.error('[SW] Error sending message to client:', error);
+            // Try sending a minimal error message if the original fails
+            try {
+              client.postMessage({
+                type: 'BROADCAST_ERROR',
+                data: { error: 'Failed to send original message due to serialization error' }
+              });
+              resolve(false);
+            } catch (fallbackError) {
+              console.error('[SW] Even fallback message failed:', fallbackError);
+              resolve(false);
+            }
+          }
+        });
+      });
+
+      return Promise.all(promises);
+    })
+    .catch(error => {
+      console.error('[SW] Error getting clients for broadcast:', error);
+      return Promise.resolve(false);
+    });
+}
 
 // Handle push notifications - Enhanced for browser-closed scenarios
 self.addEventListener('push', function(event) {
@@ -103,7 +400,7 @@ self.addEventListener('push', function(event) {
     };
   }
 
-  console.log('[SW] Final notification data to display:', notificationData);
+  console.log('[SW] Final push notification data to display:', notificationData);
 
   // Always show browser notification - this is critical for browser-closed scenarios
   const notificationPromise = showBrowserNotification(notificationData);
@@ -139,14 +436,14 @@ async function checkAndNotifyClients(notificationData) {
             type: 'PUSH_NOTIFICATION_RECEIVED',
             data: sanitizeForPostMessage(notificationData)
           });
-          console.log('[SW] Notification forwarded to client');
+          console.log('[SW] Push notification forwarded to client');
         } catch (error) {
-          console.error('[SW] Error forwarding notification to client:', error);
+          console.error('[SW] Error forwarding push notification to client:', error);
         }
       });
       return true;
     } else {
-      console.log('[SW] No clients available - browser likely closed, notification will show via system');
+      console.log('[SW] No clients available - browser likely closed, push notification will show via system');
       return false;
     }
   } catch (error) {
@@ -168,7 +465,7 @@ function showFallbackNotification() {
   });
 }
 
-// Enhanced browser notification display with better options
+// Enhanced browser notification display with better options (for push notifications)
 function showBrowserNotification(notificationData) {
   try {
     // Ensure we have a title
@@ -186,13 +483,14 @@ function showBrowserNotification(notificationData) {
       icon: notificationData.logo_url || notificationData.icon || 'https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg',
       badge: notificationData.logo_url || notificationData.badge || 'https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg',
       image: notificationData.image_url || notificationData.image || undefined,
-      tag: notificationData.id ? `zuzzuu-${notificationData.id}` : `zuzzuu-notification-${Date.now()}`,
+      tag: notificationData.id ? `zuzzuu-push-${notificationData.id}` : `zuzzuu-push-notification-${Date.now()}`,
       data: {
         // Store essential data only to avoid serialization issues
         id: notificationData.id,
         url: notificationData.url || notificationData.action_url,
         timestamp: new Date().toISOString(),
-        original_data: notificationData
+        original_data: notificationData,
+        source: 'push'
       },
       requireInteraction: false, // Don't require user interaction
       silent: false, // Play notification sound
@@ -212,16 +510,16 @@ function showBrowserNotification(notificationData) {
       ];
     }
 
-    console.log('[SW] Showing enhanced browser notification:', title, options);
-    console.log('[SW] Notification will display even when browser is closed');
+    console.log('[SW] Showing enhanced push notification:', title, options);
+    console.log('[SW] Push notification will display even when browser is closed');
 
     return self.registration.showNotification(title, options)
       .then(() => {
-        console.log('[SW] Browser notification displayed successfully');
+        console.log('[SW] Push notification displayed successfully');
         return true;
       })
       .catch(error => {
-        console.error('[SW] Failed to show notification, trying fallback:', error);
+        console.error('[SW] Failed to show push notification, trying fallback:', error);
         // Try showing a simpler notification as fallback
         return self.registration.showNotification(title, {
           body: body,
@@ -232,7 +530,7 @@ function showBrowserNotification(notificationData) {
         });
       });
   } catch (error) {
-    console.error('[SW] Critical error showing browser notification:', error);
+    console.error('[SW] Critical error showing push notification:', error);
     // Last resort fallback
     return showFallbackNotification();
   }
@@ -277,51 +575,7 @@ function sanitizeForPostMessage(obj) {
   return sanitized;
 }
 
-// Enhanced broadcasting with better error handling
-function broadcastToClients(message) {
-  return self.clients.matchAll({ includeUncontrolled: true, type: 'window' })
-    .then(clients => {
-      console.log(`[SW] Broadcasting message to ${clients.length} clients:`, message.type);
-      
-      if (clients.length === 0) {
-        console.log('[SW] No clients to broadcast to - browser likely closed');
-        return Promise.resolve(false);
-      }
-
-      const promises = clients.map(client => {
-        return new Promise((resolve) => {
-          try {
-            // Sanitize the message before sending to avoid DataCloneError
-            const sanitizedMessage = sanitizeForPostMessage(message);
-            client.postMessage(sanitizedMessage);
-            console.log('[SW] Message sent to client successfully');
-            resolve(true);
-          } catch (error) {
-            console.error('[SW] Error sending message to client:', error);
-            // Try sending a minimal error message if the original fails
-            try {
-              client.postMessage({
-                type: 'BROADCAST_ERROR',
-                data: { error: 'Failed to send original message due to serialization error' }
-              });
-              resolve(false);
-            } catch (fallbackError) {
-              console.error('[SW] Even fallback message failed:', fallbackError);
-              resolve(false);
-            }
-          }
-        });
-      });
-
-      return Promise.all(promises);
-    })
-    .catch(error => {
-      console.error('[SW] Error getting clients for broadcast:', error);
-      return Promise.resolve(false);
-    });
-}
-
-// Enhanced notification click handling
+// Enhanced notification click handling (for both push and WebSocket notifications)
 self.addEventListener('notificationclick', function(event) {
   console.log('[SW] Notification clicked:', event.notification.tag);
   console.log('[SW] Notification data:', event.notification.data);
@@ -330,7 +584,7 @@ self.addEventListener('notificationclick', function(event) {
   event.notification.close();
   
   const data = event.notification.data || {};
-  const originalData = data.original_data || {};
+  const originalData = data.original_data || data;
   
   // Determine the URL to open
   let url = data.url || originalData.url || originalData.action_url || '/';
@@ -367,7 +621,7 @@ self.addEventListener('notificationclick', function(event) {
           // Send a message to the opened window about the notification click
           windowClient.postMessage({
             type: 'NOTIFICATION_CLICKED',
-            data: sanitizeForPostMessage(originalData)
+            data: sanitizeForPostMessage(originalData || data)
           });
         } else {
           console.error('[SW] Failed to open/focus window');
@@ -378,7 +632,6 @@ self.addEventListener('notificationclick', function(event) {
       })
   );
 });
-
 
 // Handle background sync (for offline functionality)
 self.addEventListener('sync', function(event) {
