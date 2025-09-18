@@ -14,7 +14,7 @@
     <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
 
     <script src="zuzzuu-notification.js"></script>
-<script src="zuzzuu-subscriber.js"></script>
+    <script src="zuzzuu-subscriber.js"></script>
 
     <style>
       * {
@@ -680,19 +680,28 @@ Your notification system is working perfectly!</textarea
           this.startUptimeCounter();
           this.setInitialTimestamp();
           this.log("success", "✅ Dashboard initialized successfully");
-          
+
           // Register subscriber with backend before connecting
           setTimeout(() => {
             this.log("info", "📝 Registering subscriber with backend...");
-            this.registerSubscriber().then(() => {
-              this.log("info", "🔄 Auto-connecting to Socket.IO...");
-              this.connect();
-            }).catch((error) => {
-              this.log("error", `❌ Subscriber registration failed: ${error.message}`);
-              // Still attempt to connect even if registration fails
-              this.log("info", "🔄 Auto-connecting to Socket.IO anyway...");
-              this.connect();
-            });
+            this.registerSubscriber()
+              .then(() => {
+                this.log("info", "🔄 Auto-connecting to Socket.IO...");
+                this.connect();
+                // Initialize notification system with push support
+                this.initializeNotificationSystem();
+              })
+              .catch((error) => {
+                this.log(
+                  "error",
+                  `❌ Subscriber registration failed: ${error.message}`
+                );
+                // Still attempt to connect even if registration fails
+                this.log("info", "🔄 Auto-connecting to Socket.IO anyway...");
+                this.connect();
+                // Still initialize notification system
+                this.initializeNotificationSystem();
+              });
           }, 1000); // Wait 1 second after initialization to ensure everything is ready
         },
 
@@ -714,41 +723,50 @@ Your notification system is working perfectly!</textarea
               browser: this.getBrowserInfo(),
               operating_system: this.getOSInfo(),
               country: this.getCountryInfo(),
-              language: navigator.language || 'en-US',
-              status: 'active',
+              language: navigator.language || "en-US",
+              status: "active",
               metadata: {
                 environment: this.state.environment,
                 user_agent: navigator.userAgent,
                 screen_resolution: `${screen.width}x${screen.height}`,
                 timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-                registration_source: 'dashboard'
-              }
+                registration_source: "dashboard",
+              },
             };
 
             const apiUrl = `${this.getApiBaseUrl()}/public/register`;
             this.log("info", `📡 Registering subscriber at: ${apiUrl}`);
 
             const response = await fetch(apiUrl, {
-              method: 'POST',
+              method: "POST",
               headers: {
-                'Content-Type': 'application/json',
-                'User-Agent': navigator.userAgent
+                "Content-Type": "application/json",
+                "User-Agent": navigator.userAgent,
               },
-              body: JSON.stringify(registrationData)
+              body: JSON.stringify(registrationData),
             });
 
             if (!response.ok) {
               const errorText = await response.text();
-              throw new Error(`Registration failed: ${response.status} - ${errorText}`);
+              throw new Error(
+                `Registration failed: ${response.status} - ${errorText}`
+              );
             }
 
             const result = await response.json();
-            this.log("success", "✅ Subscriber registered successfully", result);
+            this.log(
+              "success",
+              "✅ Subscriber registered successfully",
+              result
+            );
 
             // Update local storage with registration info
-            localStorage.setItem('zuzzuu_registration_status', 'registered');
-            localStorage.setItem('zuzzuu_registration_time', new Date().toISOString());
-            
+            localStorage.setItem("zuzzuu_registration_status", "registered");
+            localStorage.setItem(
+              "zuzzuu_registration_time",
+              new Date().toISOString()
+            );
+
             this.showToast(
               "Registration Complete",
               "Subscriber registered with backend",
@@ -758,11 +776,7 @@ Your notification system is working perfectly!</textarea
             return result;
           } catch (error) {
             this.log("error", `📝 Registration failed: ${error.message}`);
-            this.showToast(
-              "Registration Failed",
-              error.message,
-              "error"
-            );
+            this.showToast("Registration Failed", error.message, "error");
             throw error;
           }
         },
@@ -770,33 +784,33 @@ Your notification system is working perfectly!</textarea
         // Get browser info
         getBrowserInfo() {
           const userAgent = navigator.userAgent;
-          if (userAgent.includes('Chrome')) return 'Chrome';
-          if (userAgent.includes('Firefox')) return 'Firefox';
-          if (userAgent.includes('Safari')) return 'Safari';
-          if (userAgent.includes('Edge')) return 'Edge';
-          if (userAgent.includes('Opera')) return 'Opera';
-          return 'Unknown';
+          if (userAgent.includes("Chrome")) return "Chrome";
+          if (userAgent.includes("Firefox")) return "Firefox";
+          if (userAgent.includes("Safari")) return "Safari";
+          if (userAgent.includes("Edge")) return "Edge";
+          if (userAgent.includes("Opera")) return "Opera";
+          return "Unknown";
         },
 
         // Get OS info
         getOSInfo() {
           const userAgent = navigator.userAgent;
-          if (userAgent.includes('Windows')) return 'Windows';
-          if (userAgent.includes('Mac')) return 'macOS';
-          if (userAgent.includes('Linux')) return 'Linux';
-          if (userAgent.includes('Android')) return 'Android';
-          if (userAgent.includes('iOS')) return 'iOS';
-          return 'Unknown';
+          if (userAgent.includes("Windows")) return "Windows";
+          if (userAgent.includes("Mac")) return "macOS";
+          if (userAgent.includes("Linux")) return "Linux";
+          if (userAgent.includes("Android")) return "Android";
+          if (userAgent.includes("iOS")) return "iOS";
+          return "Unknown";
         },
 
         // Get country info (simplified - you might want to use a GeoIP service)
         getCountryInfo() {
           // This is a simple fallback - in production you'd use a GeoIP service
           const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-          if (timezone.includes('America')) return 'US';
-          if (timezone.includes('Europe')) return 'EU';
-          if (timezone.includes('Asia')) return 'AS';
-          return 'Unknown';
+          if (timezone.includes("America")) return "US";
+          if (timezone.includes("Europe")) return "EU";
+          if (timezone.includes("Asia")) return "AS";
+          return "Unknown";
         },
 
         // Environment detection
@@ -1118,7 +1132,8 @@ Your notification system is working perfectly!</textarea
               debug: true,
               autoConnect: false,
               socketUrl: this.getSocketIOUrl(), // Use the same URL detection logic
-              apiUrl: this.getApiBaseUrl()
+              apiUrl: this.getApiBaseUrl(),
+              vapidPublicKey: null, // Will be set by server if needed
             });
           }
 
@@ -1378,6 +1393,97 @@ Your notification system is working perfectly!</textarea
               }
             }, 300);
           }, 4000);
+        },
+
+        // Initialize notification system with push support
+        initializeNotificationSystem() {
+          if (!window.zuzzuuNotification) {
+            window.zuzzuuNotification = new ZuzzuuNotification({
+              debug: true,
+              autoConnect: false,
+              socketUrl: this.getSocketIOUrl(),
+              apiUrl: this.getApiBaseUrl(),
+              vapidPublicKey: null, // Will be set by server if needed
+            });
+          }
+
+          // Set up push notifications
+          if (
+            window.zuzzuuNotification &&
+            window.zuzzuuNotification.setupPushNotifications
+          ) {
+            window.zuzzuuNotification
+              .setupPushNotifications()
+              .then(() => {
+                this.log(
+                  "success",
+                  "✅ Push notifications set up successfully"
+                );
+              })
+              .catch((error) => {
+                this.log(
+                  "error",
+                  `❌ Push notification setup failed: ${error.message}`
+                );
+              });
+          }
+        },
+
+        // Test push notification functionality
+        async testPushNotification() {
+          if (
+            !window.zuzzuuNotification ||
+            !window.zuzzuuNotification.pushSubscription
+          ) {
+            this.log(
+              "warning",
+              "⚠️ Push subscription not available for testing"
+            );
+            this.showToast(
+              "Push Not Ready",
+              "Push subscription not available",
+              "warning"
+            );
+            return;
+          }
+
+          try {
+            // Send a test push notification via the server
+            const testData = {
+              subscriber_id: this.state.subscriberId,
+              title: "Push Test Notification",
+              message:
+                "This is a test push notification sent when browser is closed!",
+              url: window.location.href,
+              logo_url:
+                "https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg",
+            };
+
+            const response = await fetch(`${this.getApiBaseUrl()}/push/test`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify(testData),
+            });
+
+            if (response.ok) {
+              this.log("success", "✅ Test push notification sent to server");
+              this.showToast(
+                "Push Test Sent",
+                "Test notification sent to server",
+                "success"
+              );
+            } else {
+              throw new Error(`Server responded with ${response.status}`);
+            }
+          } catch (error) {
+            this.log(
+              "error",
+              `❌ Failed to send test push notification: ${error.message}`
+            );
+            this.showToast("Push Test Failed", error.message, "error");
+          }
         },
 
         // Clear log

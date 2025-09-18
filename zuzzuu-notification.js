@@ -9,7 +9,7 @@ class ZuzzuuNotification {
   constructor(options = {}) {
     // Default Zuzzuu logo URL from environment variable or fallback
     const defaultLogoUrl = 'https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg';
-    
+
     this.options = {
       apiUrl: options.apiUrl || 'http://localhost:8002/api/v1',
       socketUrl: options.socketUrl || 'http://localhost:8002', // Socket.IO URL
@@ -18,12 +18,13 @@ class ZuzzuuNotification {
       heartbeatInterval: options.heartbeatInterval || 30000,
       onNotificationClick: options.onNotificationClick || null,
       onConnectionChange: options.onConnectionChange || null,
-      logoUrl: options.logoUrl || defaultLogoUrl // Default Zuzzuu logo URL
+      logoUrl: options.logoUrl || defaultLogoUrl, // Default Zuzzuu logo URL
+      vapidPublicKey: options.vapidPublicKey || null // VAPID public key for push notifications
     };
 
     // Create CSS styles
     this.createStyles();
-    
+
     // Socket.IO connection
     this.socket = null;
     this.connected = false;
@@ -31,31 +32,35 @@ class ZuzzuuNotification {
     this.heartbeatTimer = null;
     this.reconnectTimer = null;
     this.isOnline = navigator.onLine;
-    
+
+    // Push notification subscription
+    this.pushSubscription = null;
+    this.pushSupported = 'serviceWorker' in navigator && 'PushManager' in window;
+
     // Notification container
     this.notificationContainer = null;
     this.notifications = [];
-    
+
     // Get subscriber ID
     this.subscriberId = localStorage.getItem('zuzzuu_subscriber_id');
-    
+
     // Create notification container
     this.createNotificationContainer();
-    
+
     // Set up network listeners
     this.setupNetworkListeners();
-    
+
     // Check if service worker is available
     this.useServiceWorker = 'serviceWorker' in navigator;
-    
+
     // Add connection state tracking
     this.isConnecting = false;
     this.connectionAttempted = false;
-    
+
     // Check stored connection state
     const storedConnectionState = localStorage.getItem('zuzzuu_socketio_connection_state');
     let socketConnectionState = { connected: false, subscriberId: null };
-    
+
     if (storedConnectionState) {
       try {
         socketConnectionState = JSON.parse(storedConnectionState);
@@ -63,30 +68,34 @@ class ZuzzuuNotification {
         this.log('Error parsing stored connection state:', e);
       }
     }
-    
+
     // Don't auto-connect if already connected or if subscriber registration might be in progress
     const hasConsent = localStorage.getItem('zuzzuu_notification_consent');
     const isRejected = localStorage.getItem('zuzzuu_notification_rejected');
-    
+
     // Only auto-connect if user has consented, not rejected, and not already connected
-    if (this.options.autoConnect && 
-        this.subscriberId && 
-        hasConsent && 
-        !isRejected && 
+    if (this.options.autoConnect &&
+        this.subscriberId &&
+        hasConsent &&
+        !isRejected &&
         (!socketConnectionState.connected || socketConnectionState.subscriberId !== this.subscriberId)) {
       // Add delay to avoid conflicts with registration
       setTimeout(() => {
         this.connect();
+        // Also set up push notifications after connection
+        this.setupPushNotifications();
       }, 3000);
     } else if (socketConnectionState.connected && socketConnectionState.subscriberId === this.subscriberId) {
       this.log('Already connected according to stored state');
       this.connected = true;
+      // Still set up push notifications
+      this.setupPushNotifications();
     }
-    
+
     // Set up service worker message listener for notifications
     this.setupServiceWorkerListener();
-    
-    this.log('Zuzzuu Notification initialized with Socket.IO');
+
+    this.log('Zuzzuu Notification initialized with Socket.IO and Push support:', this.pushSupported);
   }
 
   /**
@@ -727,6 +736,229 @@ class ZuzzuuNotification {
     }
   }
   
+  /**
+   * Set up push notifications
+   */
+  async setupPushNotifications() {
+    if (!this.pushSupported) {
+      this.log('Push notifications not supported in this browser');
+      return;
+    }
+
+    if (!this.subscriberId) {
+      this.log('No subscriber ID available, cannot set up push notifications');
+      return;
+    }
+
+    try {
+      // Register service worker if not already registered
+      if (!navigator.serviceWorker.controller) {
+        const registration = await navigator.serviceWorker.register('zuzzuu-sw.js');
+        this.log('Service worker registered for push notifications:', registration);
+      }
+
+      // Check if we already have a push subscription
+      const existingSubscription = await this.getExistingPushSubscription();
+      if (existingSubscription) {
+        this.pushSubscription = existingSubscription;
+        this.log('Existing push subscription found:', existingSubscription);
+        await this.sendPushSubscriptionToServer(existingSubscription);
+        return;
+      }
+
+      // Request permission and subscribe
+      const permission = await Notification.requestPermission();
+      if (permission === 'granted') {
+        await this.subscribeToPush();
+      } else {
+        this.log('Push notification permission denied');
+      }
+    } catch (error) {
+      this.log('Error setting up push notifications:', error);
+    }
+  }
+
+  /**
+   * Get existing push subscription
+   */
+  async getExistingPushSubscription() {
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      const subscription = await registration.pushManager.getSubscription();
+      return subscription;
+    } catch (error) {
+      this.log('Error getting existing push subscription:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Subscribe to push notifications
+   */
+  async subscribeToPush() {
+    try {
+      const registration = await navigator.serviceWorker.ready;
+
+      // Use VAPID key if provided, otherwise use applicationServerKey
+      const subscribeOptions = {
+        userVisibleOnly: true,
+        applicationServerKey: this.urlBase64ToUint8Array(this.options.vapidPublicKey || 'BDefaultVAPIDKeyForTestingPurposes1234567890')
+      };
+
+      const subscription = await registration.pushManager.subscribe(subscribeOptions);
+      this.pushSubscription = subscription;
+
+      this.log('Push subscription created:', subscription);
+
+      // Send subscription to server
+      await this.sendPushSubscriptionToServer(subscription);
+
+      // Store subscription locally
+      localStorage.setItem('zuzzuu_push_subscription', JSON.stringify(subscription));
+
+    } catch (error) {
+      this.log('Error subscribing to push notifications:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Send push subscription to server
+   */
+  async sendPushSubscriptionToServer(subscription) {
+    if (!this.subscriberId) {
+      this.log('No subscriber ID, cannot send push subscription to server');
+      return;
+    }
+
+    try {
+      const subscriptionData = {
+        subscriber_id: this.subscriberId,
+        endpoint: subscription.endpoint,
+        keys: {
+          p256dh: this.arrayBufferToBase64(subscription.getKey('p256dh')),
+          auth: this.arrayBufferToBase64(subscription.getKey('auth'))
+        },
+        user_agent: navigator.userAgent,
+        browser_info: this.getBrowserInfo()
+      };
+
+      const response = await fetch(`${this.options.apiUrl}/push/subscribe`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(subscriptionData)
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        this.log('Push subscription sent to server successfully:', result);
+      } else {
+        this.log('Failed to send push subscription to server:', response.status);
+      }
+    } catch (error) {
+      this.log('Error sending push subscription to server:', error);
+    }
+  }
+
+  /**
+   * Unsubscribe from push notifications
+   */
+  async unsubscribeFromPush() {
+    if (!this.pushSubscription) {
+      this.log('No push subscription to unsubscribe from');
+      return;
+    }
+
+    try {
+      const result = await this.pushSubscription.unsubscribe();
+      if (result) {
+        this.log('Successfully unsubscribed from push notifications');
+        this.pushSubscription = null;
+        localStorage.removeItem('zuzzuu_push_subscription');
+
+        // Notify server
+        await this.notifyServerOfUnsubscription();
+      }
+    } catch (error) {
+      this.log('Error unsubscribing from push notifications:', error);
+    }
+  }
+
+  /**
+   * Notify server of unsubscription
+   */
+  async notifyServerOfUnsubscription() {
+    if (!this.subscriberId) return;
+
+    try {
+      await fetch(`${this.options.apiUrl}/push/unsubscribe`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          subscriber_id: this.subscriberId
+        })
+      });
+    } catch (error) {
+      this.log('Error notifying server of unsubscription:', error);
+    }
+  }
+
+  /**
+   * Get browser info for push subscription
+   */
+  getBrowserInfo() {
+    const userAgent = navigator.userAgent;
+    let browser = 'Unknown';
+    let os = 'Unknown';
+
+    if (userAgent.includes('Chrome')) browser = 'Chrome';
+    else if (userAgent.includes('Firefox')) browser = 'Firefox';
+    else if (userAgent.includes('Safari')) browser = 'Safari';
+    else if (userAgent.includes('Edge')) browser = 'Edge';
+
+    if (userAgent.includes('Windows')) os = 'Windows';
+    else if (userAgent.includes('Mac')) os = 'macOS';
+    else if (userAgent.includes('Linux')) os = 'Linux';
+    else if (userAgent.includes('Android')) os = 'Android';
+    else if (userAgent.includes('iOS')) os = 'iOS';
+
+    return { browser, os, userAgent };
+  }
+
+  /**
+   * Convert VAPID key to Uint8Array
+   */
+  urlBase64ToUint8Array(base64String) {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding)
+      .replace(/-/g, '+')
+      .replace(/_/g, '/');
+
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+
+    for (let i = 0; i < rawData.length; ++i) {
+      outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
+  }
+
+  /**
+   * Convert ArrayBuffer to base64
+   */
+  arrayBufferToBase64(buffer) {
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    for (let i = 0; i < bytes.byteLength; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    return window.btoa(binary);
+  }
+
   /**
    * Log debug messages
    */

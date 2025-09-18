@@ -60,9 +60,9 @@ self.addEventListener('message', function(event) {
 // Handle push notifications
 self.addEventListener('push', function(event) {
   console.log('[SW] Push notification received');
-  
+
   let notificationData = {};
-  
+
   if (event.data) {
     try {
       notificationData = event.data.json();
@@ -80,16 +80,22 @@ self.addEventListener('push', function(event) {
       message: 'You have a new notification from Zuzzuu'
     };
   }
-  
-  // Forward notification to main thread
-  broadcastToClients({
-    type: 'PUSH_NOTIFICATION_RECEIVED',
-    data: notificationData
-  });
-  
-  // Show browser notification
+
+  // Always show browser notification regardless of client state
+  const notificationPromise = showBrowserNotification(notificationData);
+
+  // Try to forward notification to main thread if clients are available
   event.waitUntil(
-    showBrowserNotification(notificationData)
+    Promise.all([
+      notificationPromise,
+      broadcastToClients({
+        type: 'PUSH_NOTIFICATION_RECEIVED',
+        data: notificationData
+      }).catch(error => {
+        console.log('[SW] No clients available to broadcast to, but notification shown:', error.message);
+        // This is expected when browser is closed, don't treat as error
+      })
+    ])
   );
 });
 
