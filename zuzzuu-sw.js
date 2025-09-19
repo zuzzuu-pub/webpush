@@ -269,7 +269,7 @@ function handleWebSocketMessage(event) {
 }
 
 // Show browser notification from WebSocket data
-function showBrowserNotificationFromWebSocket(notificationData) {
+async function showBrowserNotificationFromWebSocket(notificationData) {
   try {
     console.log('[SW] WebSocket notificationData:', JSON.stringify(notificationData, null, 2));
     console.log('[SW] WebSocket notificationData keys:', Object.keys(notificationData));
@@ -299,12 +299,17 @@ function showBrowserNotificationFromWebSocket(notificationData) {
     console.log('[SW] WebSocket imageUrl resolved to:', imageUrl);
     console.log('[SW] WebSocket notification will include image:', imageUrl ? 'YES' : 'NO');
     
-    // Validate image URL if present
+    // Validate and preload image if present
+    let validatedImageUrl = undefined;
     if (imageUrl) {
       console.log('[SW] Image URL validation:');
       console.log('[SW] - Is valid URL format:', /^https?:\/\//.test(imageUrl));
       console.log('[SW] - Is Cloudinary URL:', imageUrl.includes('cloudinary.com'));
       console.log('[SW] - URL length:', imageUrl.length);
+      
+      // Preload and validate image
+      validatedImageUrl = await preloadAndValidateImage(imageUrl);
+      console.log('[SW] Image validation result:', validatedImageUrl ? 'SUCCESS' : 'FAILED');
     }
 
     const title = notificationData.title || 'New Notification from Zuzzuu';
@@ -312,7 +317,7 @@ function showBrowserNotificationFromWebSocket(notificationData) {
       body: notificationData.message || '',
       icon: logoUrl,
       badge: 'https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg',
-      image: imageUrl,
+      image: validatedImageUrl, // Use validated image URL
       tag: notificationData.id || 'zuzzuu-websocket-notification-' + Date.now(),
       data: notificationData,
       requireInteraction: false,
@@ -321,19 +326,122 @@ function showBrowserNotificationFromWebSocket(notificationData) {
       vibrate: [200, 100, 200]
     };
     
-    console.log('[SW] Showing WebSocket notification:', title, options);
+    console.log('[SW] Showing WebSocket notification:', title);
+    console.log('[SW] Final notification options:', JSON.stringify(options, null, 2));
     
     self.registration.showNotification(title, options)
       .then(() => {
         console.log('[SW] WebSocket notification displayed successfully');
+        if (validatedImageUrl) {
+          console.log('[SW] ✅ Notification displayed WITH image');
+        } else {
+          console.log('[SW] ⚠️ Notification displayed WITHOUT image');
+        }
       })
       .catch(error => {
         console.error('[SW] Failed to show WebSocket notification:', error);
+        // Fallback: show notification without image
+        return showFallbackNotificationWithoutImage(title, notificationData);
       });
       
   } catch (error) {
     console.error('[SW] Error showing WebSocket notification:', error);
+    // Fallback: show basic notification
+    return showFallbackNotificationWithoutImage(
+      notificationData.title || 'New Notification from Zuzzuu',
+      notificationData
+    );
   }
+}
+
+// Preload and validate image for notification
+async function preloadAndValidateImage(imageUrl) {
+  try {
+    console.log('[SW] Preloading image:', imageUrl);
+    
+    // Basic URL validation
+    if (!imageUrl || typeof imageUrl !== 'string') {
+      console.log('[SW] Invalid image URL: not a string');
+      return null;
+    }
+    
+    if (!imageUrl.startsWith('http://') && !imageUrl.startsWith('https://')) {
+      console.log('[SW] Invalid image URL: not HTTP/HTTPS');
+      return null;
+    }
+    
+    // Try to fetch the image to validate it exists and is accessible
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+    
+    try {
+      const response = await fetch(imageUrl, {
+        method: 'HEAD', // Only get headers, not the full image
+        signal: controller.signal,
+        mode: 'cors', // Allow CORS
+        cache: 'force-cache' // Use cache if available
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        console.log('[SW] Image fetch failed:', response.status, response.statusText);
+        return null;
+      }
+      
+      // Check if it's actually an image
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.startsWith('image/')) {
+        console.log('[SW] URL is not an image, content-type:', contentType);
+        return null;
+      }
+      
+      console.log('[SW] ✅ Image validation successful');
+      return imageUrl;
+      
+    } catch (fetchError) {
+      clearTimeout(timeoutId);
+      console.log('[SW] Image fetch error:', fetchError.message);
+      
+      // If CORS fails, still try to use the image - browsers might handle it differently for notifications
+      if (fetchError.name === 'TypeError' || fetchError.message.includes('CORS')) {
+        console.log('[SW] CORS issue detected, but attempting to use image anyway');
+        return imageUrl; // Return original URL, let browser notification handle CORS
+      }
+      
+      return null;
+    }
+    
+  } catch (error) {
+    console.error('[SW] Image preload error:', error);
+    return null;
+  }
+}
+
+// Fallback notification without image
+function showFallbackNotificationWithoutImage(title, notificationData) {
+  console.log('[SW] Showing fallback notification without image');
+  
+  const options = {
+    body: notificationData.message || 'You have a new notification',
+    icon: notificationData.logo_url || 'https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg',
+    badge: 'https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg',
+    // No image property - fallback without image
+    tag: notificationData.id || 'zuzzuu-fallback-notification-' + Date.now(),
+    data: notificationData,
+    requireInteraction: false,
+    silent: false,
+    renotify: true,
+    vibrate: [200, 100, 200]
+  };
+  
+  return self.registration.showNotification(title, options)
+    .then(() => {
+      console.log('[SW] Fallback notification displayed successfully (without image)');
+    })
+    .catch(error => {
+      console.error('[SW] Even fallback notification failed:', error);
+    });
 }
 
 // Update subscriber status via WebSocket
@@ -520,7 +628,7 @@ function showFallbackNotification() {
 }
 
 // Enhanced browser notification display with Firebase-style options (for push notifications)
-function showBrowserNotification(notificationData) {
+async function showBrowserNotification(notificationData) {
   try {
     console.log('[SW] Push notificationData:', JSON.stringify(notificationData, null, 2));
     
@@ -546,11 +654,18 @@ function showBrowserNotification(notificationData) {
     console.log('[SW] Push imageUrl resolved to:', imageUrl);
     console.log('[SW] Push notification will include image:', imageUrl ? 'YES' : 'NO');
 
+    // Validate and preload image if present
+    let validatedImageUrl = undefined;
+    if (imageUrl) {
+      validatedImageUrl = await preloadAndValidateImage(imageUrl);
+      console.log('[SW] Push image validation result:', validatedImageUrl ? 'SUCCESS' : 'FAILED');
+    }
+
     const options = {
       body: body,
       icon: notificationData.logo_url || notificationData.icon || 'https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg',
       badge: notificationData.logo_url || notificationData.badge || 'https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg',
-      image: imageUrl, // Use the enhanced image URL resolution
+      image: validatedImageUrl, // Use validated image URL
       tag: notificationData.tag || notificationData.id ? `zuzzuu-push-${notificationData.id}` : `zuzzuu-notification-${Date.now()}`,
       data: {
         // Store essential data only to avoid serialization issues
@@ -591,29 +706,28 @@ function showBrowserNotification(notificationData) {
     }
 
     console.log('[SW] Showing enhanced push notification (Firebase-style):', title);
-    console.log('[SW] Push notification options:', JSON.stringify(options, null, 2));
+    console.log('[SW] Push notification final options:', JSON.stringify(options, null, 2));
     console.log('[SW] Push notification will display even when browser is closed');
 
     return self.registration.showNotification(title, options)
       .then(() => {
         console.log('[SW] Push notification displayed successfully');
+        if (validatedImageUrl) {
+          console.log('[SW] ✅ Push notification displayed WITH image');
+        } else {
+          console.log('[SW] ⚠️ Push notification displayed WITHOUT image');
+        }
         return true;
       })
       .catch(error => {
         console.error('[SW] Failed to show push notification, trying fallback:', error);
-        // Try showing a simpler notification as fallback
-        return self.registration.showNotification(title, {
-          body: body,
-          icon: 'https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg',
-          tag: `zuzzuu-fallback-${Date.now()}`,
-          requireInteraction: false,
-          silent: false
-        });
+        // Try showing a fallback without image
+        return showFallbackNotificationWithoutImage(title, notificationData);
       });
   } catch (error) {
     console.error('[SW] Critical error showing push notification:', error);
     // Last resort fallback
-    return showFallbackNotification();
+    return showFallbackNotificationWithoutImage(title || 'Zuzzuu Notification', notificationData || {});
   }
 }
 
