@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Socket.IO Integration Test</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+      .status {
+        padding: 10px;
+        margin: 10px 0;
+        border-radius: 4px;
+      }
+      .connected {
+        background: #d4edda;
+        color: #155724;
+        border: 1px solid #c3e6cb;
+      }
+      .disconnected {
+        background: #f8d7da;
+        color: #721c24;
+        border: 1px solid #f5c6cb;
+      }
+      button {
+        background: #007bff;
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 4px;
+        cursor: pointer;
+        margin: 5px;
+      }
+      button:hover {
+        background: #0056b3;
+      }
+      button:disabled {
+        background: #6c757d;
+        cursor: not-allowed;
+      }
+      .log {
+        background: #f8f9fa;
+        padding: 10px;
+        border-radius: 4px;
+        margin: 10px 0;
+        font-family: monospace;
+        font-size: 12px;
+        max-height: 300px;
+        overflow-y: auto;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>🔌 Socket.IO Integration Test</h1>
+    <p>Test Socket.IO connection and notification display</p>
+
+    <div id="connectionStatus" class="status disconnected">
+      Not connected to Socket.IO
+    </div>
+
+    <button onclick="connectSocketIO()">Connect to Socket.IO</button>
+    <button onclick="disconnectSocketIO()">Disconnect</button>
+    <button onclick="sendTestNotification()">Send Test Notification</button>
+    <button onclick="clearLogs()">Clear Logs</button>
+
+    <div id="log" class="log"></div>
+
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <script src="zuzzuu-notification.js"></script>
+
+    <script>
+      let socket = null;
+      let zuzzuuNotification = null;
+      let logs = [];
+
+      function log(message, type = "info") {
+        const timestamp = new Date().toLocaleTimeString();
+        logs.push(`[${timestamp}] ${message}`);
+        updateLog();
+        console.log(message);
+      }
+
+      function updateLog() {
+        document.getElementById("log").textContent = logs.slice(-50).join("\n");
+      }
+
+      function clearLogs() {
+        logs = [];
+        updateLog();
+      }
+
+      function updateConnectionStatus(connected) {
+        const statusEl = document.getElementById("connectionStatus");
+        if (connected) {
+          statusEl.textContent = "Connected to Socket.IO";
+          statusEl.className = "status connected";
+        } else {
+          statusEl.textContent = "Not connected to Socket.IO";
+          statusEl.className = "status disconnected";
+        }
+      }
+
+      async function connectSocketIO() {
+        if (socket && socket.connected) {
+          log("Already connected");
+          return;
+        }
+
+        log("Connecting to Socket.IO...");
+
+        try {
+          // Connect to Socket.IO server
+          socket = io("http://localhost:8002", {
+            transports: ["websocket", "polling"],
+          });
+
+          socket.on("connect", () => {
+            log("✅ Socket.IO connected");
+            updateConnectionStatus(true);
+
+            // Send registration after connection
+            socket.emit("register", {
+              subscriber_id: "test-subscriber-" + Date.now(),
+              user_agent: navigator.userAgent,
+            });
+          });
+
+          socket.on("disconnect", () => {
+            log("❌ Socket.IO disconnected");
+            updateConnectionStatus(false);
+          });
+
+          socket.on("notification", (data) => {
+            log(
+              "📧 Received notification from Socket.IO:",
+              JSON.stringify(data, null, 2)
+            );
+
+            // Show in-app notification via zuzzuu-notification.js
+            if (zuzzuuNotification) {
+              zuzzuuNotification.handleNotification(data);
+            }
+
+            // Also show system notification via service worker
+            showSystemNotification(data);
+          });
+
+          socket.on("connect_error", (error) => {
+            log("❌ Socket.IO connection error:", error.message);
+          });
+        } catch (error) {
+          log("❌ Failed to connect to Socket.IO:", error.message);
+        }
+      }
+
+      function disconnectSocketIO() {
+        if (socket) {
+          log("Disconnecting from Socket.IO...");
+          socket.disconnect();
+          socket = null;
+          updateConnectionStatus(false);
+        }
+      }
+
+      function sendTestNotification() {
+        if (!socket || !socket.connected) {
+          log("❌ Not connected to Socket.IO");
+          return;
+        }
+
+        const testNotification = {
+          id: "test-" + Date.now(),
+          title: "Test Notification",
+          message: "This is a test notification from Socket.IO",
+          image_url:
+            "https://res.cloudinary.com/do5wahloo/image/upload/v1754142630/y17fdyg4c3hnpk0aolnw.jpg",
+          logo_url:
+            "https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg",
+          url: window.location.href,
+        };
+
+        log("📤 Sending test notification to server...");
+        socket.emit("test_notification", testNotification);
+      }
+
+      async function showSystemNotification(data) {
+        // Check if service worker is available and send message to show system notification
+        if (
+          "serviceWorker" in navigator &&
+          navigator.serviceWorker.controller
+        ) {
+          log("📱 Sending notification to service worker for system display");
+
+          navigator.serviceWorker.controller.postMessage({
+            type: "SIMULATE_WEBSOCKET_MESSAGE",
+            data: {
+              type: "notification",
+              data: data,
+            },
+          });
+        } else {
+          log("⚠️ Service worker not available for system notifications");
+        }
+      }
+
+      // Initialize zuzzuu notification system
+      document.addEventListener("DOMContentLoaded", () => {
+        log("🚀 Initializing Zuzzuu Notification system...");
+
+        zuzzuuNotification = new ZuzzuuNotification({
+          apiUrl: "http://localhost:8002/api/v1",
+          socketUrl: "http://localhost:8002",
+          debug: true,
+          autoConnect: false, // We'll handle connection manually
+        });
+
+        log("✅ Zuzzuu Notification system initialized");
+      });
+
+      // Cleanup on page unload
+      window.addEventListener("beforeunload", () => {
+        if (socket) {
+          socket.disconnect();
+        }
+      });
+    </script>
+  </body>
+</html>
