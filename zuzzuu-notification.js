@@ -604,8 +604,11 @@ class ZuzzuuNotification {
       this.createNotificationContainer();
     }
 
-    // Only show in-app notification
+    // Show both in-app notification AND browser notification for consistency
     this.showInAppNotification(notificationData);
+
+    // Also show browser notification if permission is granted (like the test button does)
+    this.showBrowserNotification(notificationData);
 
     this.log('Notification handling completed for:', notificationData.id || 'unknown');
   }
@@ -778,6 +781,52 @@ class ZuzzuuNotification {
       // Remove from notifications array
       this.notifications = this.notifications.filter(n => n.element !== element);
     }, 300);
+  }
+
+  /**
+   * Show browser notification (like the test button does)
+   */
+  showBrowserNotification(data) {
+    // Check if notifications are supported and permission is granted
+    if (!('Notification' in window) || Notification.permission !== 'granted') {
+      this.log('Browser notifications not supported or permission not granted');
+      return;
+    }
+
+    try {
+      // Use the same format as the test button for consistency
+      const title = data.title || 'New Notification';
+      const options = {
+        body: data.message || 'You have a new notification',
+        icon: data.logo_url || this.options.logoUrl,
+        badge: 'https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg',
+        tag: data.id || "browser-notification-" + Date.now(),
+        data: {
+          url: data.url || window.location.href,
+          timestamp: data.timestamp || new Date().toISOString()
+        },
+        requireInteraction: false,
+        silent: false,
+        vibrate: [200, 100, 200]
+      };
+
+      // Show the browser notification directly using Notification API
+      const notification = new Notification(title, options);
+
+      // Handle click on browser notification
+      notification.onclick = function(event) {
+        event.preventDefault();
+        const url = event.target.data?.url || window.location.href;
+        window.focus();
+        if (url && url !== window.location.href) {
+          window.open(url, '_blank');
+        }
+      };
+
+      this.log('Browser notification shown for:', options.tag);
+    } catch (error) {
+      this.log('Error showing browser notification:', error);
+    }
   }
 
   /**
