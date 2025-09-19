@@ -261,13 +261,18 @@ function handleWebSocketMessage(event) {
 // Show browser notification from WebSocket data
 function showBrowserNotificationFromWebSocket(notificationData) {
   try {
-    // Check for image_url in nested template if main image_url is null/empty
-    const logoUrl = notificationData.logo_url || 
-                   (notificationData.template && notificationData.template.logo_url) || 
+    console.log('[SW] WebSocket notificationData:', JSON.stringify(notificationData, null, 2));
+
+    // Check for image_url or image in nested template if main fields are null/empty
+    const logoUrl = notificationData.logo_url ||
+                   (notificationData.template && notificationData.template.logo_url) ||
                    'https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg';
-    const imageUrl = notificationData.image_url ||
+    const imageUrl = notificationData.image_url || notificationData.image ||
                     (notificationData.template && notificationData.template.image_url) ||
+                    (notificationData.template && notificationData.template.image) ||
                     undefined;
+
+    console.log('[SW] WebSocket imageUrl resolved to:', imageUrl);
 
     const title = notificationData.title || 'New Notification from Zuzzuu';
     const options = {
