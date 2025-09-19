@@ -267,10 +267,18 @@ function showBrowserNotificationFromWebSocket(notificationData) {
     const logoUrl = notificationData.logo_url ||
                    (notificationData.template && notificationData.template.logo_url) ||
                    'https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg';
-    // Check for image_url (matching the main thread logic from zuzzuu-notification.js)
-    const imageUrl = notificationData.image_url || undefined;
+    
+    // Enhanced image URL handling - check multiple possible fields like the custom notification does
+    const imageUrl = notificationData.image_url ||
+                     notificationData.image ||
+                     (notificationData.template && notificationData.template.image_url) ||
+                     (notificationData.template && notificationData.template.image) ||
+                     (notificationData.data && notificationData.data.image_url) ||
+                     (notificationData.data && notificationData.data.image) ||
+                     undefined;
 
     console.log('[SW] WebSocket imageUrl resolved to:', imageUrl);
+    console.log('[SW] WebSocket notification will include image:', imageUrl ? 'YES' : 'NO');
 
     const title = notificationData.title || 'New Notification from Zuzzuu';
     const options = {
@@ -487,6 +495,8 @@ function showFallbackNotification() {
 // Enhanced browser notification display with Firebase-style options (for push notifications)
 function showBrowserNotification(notificationData) {
   try {
+    console.log('[SW] Push notificationData:', JSON.stringify(notificationData, null, 2));
+    
     // Ensure we have a title
     let title = notificationData.title || notificationData.name || 'Zuzzuu Notification';
     
@@ -497,11 +507,23 @@ function showBrowserNotification(notificationData) {
     if (title.length > 100) title = title.substring(0, 97) + '...';
     if (body.length > 200) body = body.substring(0, 197) + '...';
 
+    // Enhanced image URL handling - check multiple possible fields like the custom notification does
+    const imageUrl = notificationData.image_url ||
+                     notificationData.image ||
+                     (notificationData.template && notificationData.template.image_url) ||
+                     (notificationData.template && notificationData.template.image) ||
+                     (notificationData.data && notificationData.data.image_url) ||
+                     (notificationData.data && notificationData.data.image) ||
+                     undefined;
+
+    console.log('[SW] Push imageUrl resolved to:', imageUrl);
+    console.log('[SW] Push notification will include image:', imageUrl ? 'YES' : 'NO');
+
     const options = {
       body: body,
       icon: notificationData.logo_url || notificationData.icon || 'https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg',
       badge: notificationData.logo_url || notificationData.badge || 'https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg',
-      image: notificationData.image_url || notificationData.image || undefined,
+      image: imageUrl, // Use the enhanced image URL resolution
       tag: notificationData.tag || notificationData.id ? `zuzzuu-push-${notificationData.id}` : `zuzzuu-notification-${Date.now()}`,
       data: {
         // Store essential data only to avoid serialization issues
@@ -541,7 +563,8 @@ function showBrowserNotification(notificationData) {
       ];
     }
 
-    console.log('[SW] Showing enhanced push notification (Firebase-style):', title, options);
+    console.log('[SW] Showing enhanced push notification (Firebase-style):', title);
+    console.log('[SW] Push notification options:', JSON.stringify(options, null, 2));
     console.log('[SW] Push notification will display even when browser is closed');
 
     return self.registration.showNotification(title, options)
