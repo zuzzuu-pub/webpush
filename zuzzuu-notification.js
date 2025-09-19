@@ -799,7 +799,7 @@ class ZuzzuuNotification {
       const options = {
         body: data.message || 'You have a new notification',
         icon: data.logo_url || this.options.logoUrl,
-        badge: 'https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg',
+        badge: data.image_url,
         tag: data.id || "browser-notification-" + Date.now(),
         data: {
           url: data.url || window.location.href,
@@ -833,16 +833,17 @@ class ZuzzuuNotification {
    * Show connectivity notification (special styling for network status)
    */
   showConnectivityNotification(options) {
-    const { title, message, type, icon } = options;
-    
+    const { title, message, type, icon, image_url } = options;
+
     this.log(`Showing connectivity notification (${type}):`, { title, message });
-    
+
     // Create notification data for connectivity alert
     const notificationData = {
       id: `connectivity-${type}-${Date.now()}`,
       title: title,
       message: message,
       logo_url: this.options.logoUrl,
+      image_url: image_url || null, // Add image URL support
       connectivity_type: type, // Special flag for connectivity notifications
       icon: icon || '📡'
     };
