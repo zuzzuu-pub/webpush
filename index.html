@@ -1092,8 +1092,13 @@
               if (registration) {
                 this.state.serviceWorkerRegistered = true;
                 this.log("success", "👷 Service Worker is registered");
+                this.updateUI(); // Update UI immediately when found
               } else {
-                this.log("warning", "👷 Service Worker not registered");
+                this.log(
+                  "info",
+                  "👷 Service Worker not registered yet - will auto-register on page load"
+                );
+                // Don't mark as error, just info - it will be registered automatically
               }
             } catch (error) {
               this.log(
@@ -1103,6 +1108,7 @@
             }
           } else {
             this.log("warning", "👷 Service Worker not supported");
+            this.updateUI(); // Update UI to show "Not Supported"
           }
         },
 
@@ -2085,6 +2091,16 @@
                 registration
               );
 
+              // Notify the dashboard that service worker is now registered
+              if (window.ZuzzuuDashboard && window.ZuzzuuDashboard.state) {
+                window.ZuzzuuDashboard.state.serviceWorkerRegistered = true;
+                window.ZuzzuuDashboard.log(
+                  "success",
+                  "👷 Service Worker auto-registered successfully"
+                );
+                window.ZuzzuuDashboard.updateUI(); // Update UI immediately
+              }
+
               // Automatically request notification permission if not already granted
               if (
                 "Notification" in window &&
@@ -2111,6 +2127,16 @@
                         },
                       }
                     );
+
+                    // Update dashboard UI for notification permission
+                    if (
+                      window.ZuzzuuDashboard &&
+                      window.ZuzzuuDashboard.updateUI
+                    ) {
+                      setTimeout(() => {
+                        window.ZuzzuuDashboard.updateUI();
+                      }, 100);
+                    }
                   }
                 });
               }
@@ -2120,10 +2146,31 @@
                 "[Auto-SW] Service Worker registration failed:",
                 error
               );
+
+              // Notify dashboard of failure
+              if (window.ZuzzuuDashboard && window.ZuzzuuDashboard.log) {
+                window.ZuzzuuDashboard.log(
+                  "error",
+                  `👷 Service Worker auto-registration failed: ${error.message}`
+                );
+              }
             });
         });
       } else {
         console.warn("[Auto-SW] Service Workers not supported in this browser");
+
+        // Update dashboard to show "Not Supported"
+        if (window.ZuzzuuDashboard && window.ZuzzuuDashboard.log) {
+          window.ZuzzuuDashboard.log(
+            "warning",
+            "👷 Service Worker not supported in this browser"
+          );
+          setTimeout(() => {
+            if (window.ZuzzuuDashboard.updateUI) {
+              window.ZuzzuuDashboard.updateUI();
+            }
+          }, 100);
+        }
       }
     </script>
   </body>
