@@ -1006,8 +1006,8 @@
             });
 
           // Firebase-style service worker message handling
-          if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.addEventListener('message', (event) => {
+          if ("serviceWorker" in navigator) {
+            navigator.serviceWorker.addEventListener("message", (event) => {
               this.handleServiceWorkerMessage(event);
             });
           }
@@ -1297,10 +1297,10 @@
             );
             this.state.serviceWorkerRegistered = true;
             this.log("success", "👷 Service Worker registered successfully");
-            
+
             // Firebase-style: Automatically set up push notifications after SW registration
             await this.autoSetupPushNotifications(registration);
-            
+
             this.showToast(
               "Service Worker",
               "Successfully registered with push support",
@@ -1320,49 +1320,68 @@
         async autoSetupPushNotifications(registration) {
           try {
             this.log("info", "🔔 Auto-setting up push notifications...");
-            
+
             // Check if notifications are supported
             if (!("Notification" in window)) {
-              this.log("warning", "⚠️ This browser does not support notifications");
+              this.log(
+                "warning",
+                "⚠️ This browser does not support notifications"
+              );
               return;
             }
 
             // Check current permission
             let permission = Notification.permission;
-            
-            if (permission === 'default') {
+
+            if (permission === "default") {
               this.log("info", "🔔 Requesting notification permission...");
               permission = await Notification.requestPermission();
             }
 
-            if (permission === 'granted') {
+            if (permission === "granted") {
               this.log("success", "✅ Notification permission granted");
-              
+
               // Initialize notification system if not already done
               if (!window.zuzzuuNotification) {
                 this.initializeNotificationSystem();
               }
-              
+
               // Set up push subscription (Firebase-style)
-              if (window.zuzzuuNotification && window.zuzzuuNotification.setupPushNotifications) {
+              if (
+                window.zuzzuuNotification &&
+                window.zuzzuuNotification.setupPushNotifications
+              ) {
                 await window.zuzzuuNotification.setupPushNotifications();
-                this.log("success", "✅ Push notifications configured successfully");
-                
+                this.log(
+                  "success",
+                  "✅ Push notifications configured successfully"
+                );
+
                 // Show a test notification to confirm it's working
                 if (registration) {
-                  await registration.showNotification('Zuzzuu Notifications Ready', {
-                    body: 'Push notifications are now active! You\'ll receive notifications even when the browser is closed.',
-                    icon: 'https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg',
-                    badge: 'https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg',
-                    tag: 'zuzzuu-setup-complete',
-                    requireInteraction: false,
-                    silent: false
-                  });
-                  this.log("success", "✅ Setup confirmation notification shown");
+                  await registration.showNotification(
+                    "Zuzzuu Notifications Ready",
+                    {
+                      body: "Push notifications are now active! You'll receive notifications even when the browser is closed.",
+                      icon: "https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg",
+                      badge:
+                        "https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg",
+                      tag: "zuzzuu-setup-complete",
+                      requireInteraction: false,
+                      silent: false,
+                    }
+                  );
+                  this.log(
+                    "success",
+                    "✅ Setup confirmation notification shown"
+                  );
                 }
               }
-            } else if (permission === 'denied') {
-              this.log("warning", "⚠️ Notification permission denied - push notifications disabled");
+            } else if (permission === "denied") {
+              this.log(
+                "warning",
+                "⚠️ Notification permission denied - push notifications disabled"
+              );
             } else {
               this.log("info", "ℹ️ Notification permission not determined");
             }
@@ -1890,27 +1909,34 @@
         // Handle service worker messages (Firebase-style)
         handleServiceWorkerMessage(event) {
           const { type, data } = event.data || {};
-          
+
           switch (type) {
-            case 'PUSH_NOTIFICATION_RECEIVED':
-              this.log("info", "📱 Push notification received in main thread", data);
+            case "PUSH_NOTIFICATION_RECEIVED":
+              this.log(
+                "info",
+                "📱 Push notification received in main thread",
+                data
+              );
               this.handlePushNotificationReceived(data);
               break;
-              
-            case 'NOTIFICATION_CLICKED':
+
+            case "NOTIFICATION_CLICKED":
               this.log("info", "🖱️ Push notification clicked", data);
               this.handleNotificationClicked(data);
               break;
-              
-            case 'NOTIFICATION_CLOSED':
+
+            case "NOTIFICATION_CLOSED":
               this.log("info", "❌ Push notification closed", data);
               this.handleNotificationClosed(data);
               break;
-              
-            case 'SERVICE_WORKER_READY':
-              this.log("success", "👷 Service worker ready and claiming clients");
+
+            case "SERVICE_WORKER_READY":
+              this.log(
+                "success",
+                "👷 Service worker ready and claiming clients"
+              );
               break;
-              
+
             default:
               this.log("info", `📨 Service worker message: ${type}`, data);
           }
@@ -1920,68 +1946,97 @@
         handlePushNotificationReceived(notificationData) {
           try {
             // Log the notification for debugging
-            this.log("success", "✅ Push notification processed", notificationData);
-            
+            this.log(
+              "success",
+              "✅ Push notification processed",
+              notificationData
+            );
+
             // Update UI if needed
             this.updateNotificationCounter();
-            
+
             // Store notification in local history if desired
             this.storeNotificationInHistory(notificationData);
-            
           } catch (error) {
-            this.log("error", `❌ Error handling push notification: ${error.message}`);
+            this.log(
+              "error",
+              `❌ Error handling push notification: ${error.message}`
+            );
           }
         },
 
         // Handle notification click (Firebase-style)
         handleNotificationClicked(notificationData) {
           try {
-            this.log("info", "🖱️ Processing notification click", notificationData);
-            
+            this.log(
+              "info",
+              "🖱️ Processing notification click",
+              notificationData
+            );
+
             // Track analytics if needed
             this.trackNotificationClick(notificationData);
-            
+
             // Handle specific actions based on notification data
             if (notificationData.url) {
-              this.log("info", `🔗 Notification contained URL: ${notificationData.url}`);
+              this.log(
+                "info",
+                `🔗 Notification contained URL: ${notificationData.url}`
+              );
             }
-            
           } catch (error) {
-            this.log("error", `❌ Error handling notification click: ${error.message}`);
+            this.log(
+              "error",
+              `❌ Error handling notification click: ${error.message}`
+            );
           }
         },
 
         // Handle notification close (Firebase-style)
         handleNotificationClosed(notificationData) {
           try {
-            this.log("info", "❌ Processing notification close", notificationData);
-            
+            this.log(
+              "info",
+              "❌ Processing notification close",
+              notificationData
+            );
+
             // Track analytics if needed
             this.trackNotificationDismiss(notificationData);
-            
           } catch (error) {
-            this.log("error", `❌ Error handling notification close: ${error.message}`);
+            this.log(
+              "error",
+              `❌ Error handling notification close: ${error.message}`
+            );
           }
         },
 
         // Store notification in history
         storeNotificationInHistory(notificationData) {
           try {
-            const notifications = JSON.parse(localStorage.getItem('zuzzuu_notification_history') || '[]');
+            const notifications = JSON.parse(
+              localStorage.getItem("zuzzuu_notification_history") || "[]"
+            );
             notifications.unshift({
               ...notificationData,
               timestamp: new Date().toISOString(),
-              status: 'received'
+              status: "received",
             });
-            
+
             // Keep only last 50 notifications
             if (notifications.length > 50) {
               notifications.splice(50);
             }
-            
-            localStorage.setItem('zuzzuu_notification_history', JSON.stringify(notifications));
+
+            localStorage.setItem(
+              "zuzzuu_notification_history",
+              JSON.stringify(notifications)
+            );
           } catch (error) {
-            this.log("error", `❌ Error storing notification: ${error.message}`);
+            this.log(
+              "error",
+              `❌ Error storing notification: ${error.message}`
+            );
           }
         },
 
@@ -2011,6 +2066,51 @@
 
       // Make dashboard globally available
       window.ZuzzuuDashboard = ZuzzuuDashboard;
+    </script>
+
+    <!-- Automatic Service Worker Registration (Flutter-style) -->
+    <script>
+      // Automatically register service worker on page load (like Flutter web)
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function () {
+          console.log('[Auto-SW] Registering service worker automatically...');
+          
+          navigator.serviceWorker.register('zuzzuu-sw.js', {
+            scope: '/', // Use root scope for broader coverage
+          })
+          .then(function(registration) {
+            console.log('[Auto-SW] Service Worker registered successfully:', registration);
+            
+            // Automatically request notification permission if not already granted
+            if ('Notification' in window && Notification.permission === 'default') {
+              console.log('[Auto-SW] Requesting notification permission...');
+              Notification.requestPermission().then(function(permission) {
+                console.log('[Auto-SW] Notification permission:', permission);
+                if (permission === 'granted') {
+                  // Show a welcome notification
+                  registration.showNotification('Zuzzuu Notifications Active', {
+                    body: 'Push notifications are now enabled! You\'ll receive notifications even when the browser is closed.',
+                    icon: 'https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg',
+                    badge: 'https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg',
+                    tag: 'zuzzuu-auto-setup',
+                    requireInteraction: false,
+                    silent: false,
+                    data: {
+                      url: window.location.href,
+                      source: 'auto-setup'
+                    }
+                  });
+                }
+              });
+            }
+          })
+          .catch(function(error) {
+            console.error('[Auto-SW] Service Worker registration failed:', error);
+          });
+        });
+      } else {
+        console.warn('[Auto-SW] Service Workers not supported in this browser');
+      }
     </script>
   </body>
 </html>
