@@ -1,362 +1,464 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Zuzzuu Notification Debug Test</title>
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 20px;
-            background: #f5f5f5;
-        }
-        .test-section {
-            background: white;
-            padding: 20px;
-            margin: 20px 0;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        .status {
-            padding: 10px;
-            margin: 10px 0;
-            border-radius: 4px;
-        }
-        .success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
-        .error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
-        .warning { background: #fff3cd; color: #856404; border: 1px solid #ffeaa7; }
-        .info { background: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
-        button {
-            background: #007bff;
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 4px;
-            cursor: pointer;
-            margin: 5px;
-        }
-        button:hover { background: #0056b3; }
-        button:disabled { background: #6c757d; cursor: not-allowed; }
-        pre {
-            background: #f8f9fa;
-            padding: 10px;
-            border-radius: 4px;
-            overflow-x: auto;
-            font-size: 12px;
-        }
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+        background: #f5f5f5;
+      }
+      .test-section {
+        background: white;
+        padding: 20px;
+        margin: 20px 0;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      }
+      .status {
+        padding: 10px;
+        margin: 10px 0;
+        border-radius: 4px;
+      }
+      .success {
+        background: #d4edda;
+        color: #155724;
+        border: 1px solid #c3e6cb;
+      }
+      .error {
+        background: #f8d7da;
+        color: #721c24;
+        border: 1px solid #f5c6cb;
+      }
+      .warning {
+        background: #fff3cd;
+        color: #856404;
+        border: 1px solid #ffeaa7;
+      }
+      .info {
+        background: #d1ecf1;
+        color: #0c5460;
+        border: 1px solid #bee5eb;
+      }
+      button {
+        background: #007bff;
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 4px;
+        cursor: pointer;
+        margin: 5px;
+      }
+      button:hover {
+        background: #0056b3;
+      }
+      button:disabled {
+        background: #6c757d;
+        cursor: not-allowed;
+      }
+      pre {
+        background: #f8f9fa;
+        padding: 10px;
+        border-radius: 4px;
+        overflow-x: auto;
+        font-size: 12px;
+      }
     </style>
-</head>
-<body>
+  </head>
+  <body>
     <h1>🔍 Zuzzuu Notification Debug Test</h1>
-    <p>This tool will help identify why browser notifications aren't showing.</p>
+    <p>
+      This tool will help identify why browser notifications aren't showing.
+    </p>
 
     <div class="test-section">
-        <h2>1. Browser Support Check</h2>
-        <div id="browserSupport"></div>
+      <h2>1. Browser Support Check</h2>
+      <div id="browserSupport"></div>
     </div>
 
     <div class="test-section">
-        <h2>2. Notification Permission Status</h2>
-        <div id="permissionStatus"></div>
-        <button onclick="requestPermission()">Request Notification Permission</button>
+      <h2>2. Notification Permission Status</h2>
+      <div id="permissionStatus"></div>
+      <button onclick="requestPermission()">
+        Request Notification Permission
+      </button>
     </div>
 
     <div class="test-section">
-        <h2>3. Service Worker Registration</h2>
-        <div id="serviceWorkerStatus"></div>
-        <button onclick="registerServiceWorker()">Register Service Worker</button>
-        <button onclick="unregisterServiceWorker()">Unregister Service Worker</button>
+      <h2>3. Service Worker Registration</h2>
+      <div id="serviceWorkerStatus"></div>
+      <button onclick="registerServiceWorker()">Register Service Worker</button>
+      <button onclick="unregisterServiceWorker()">
+        Unregister Service Worker
+      </button>
     </div>
 
     <div class="test-section">
-        <h2>4. Test Notifications</h2>
-        <div id="notificationTest"></div>
-        <button onclick="testBasicNotification()">Test Basic Notification</button>
-        <button onclick="testServiceWorkerNotification()">Test Service Worker Notification</button>
-        <button onclick="testPushNotification()">Test Push-Style Notification</button>
+      <h2>4. Test Notifications</h2>
+      <div id="notificationTest"></div>
+      <button onclick="testBasicNotification()">Test Basic Notification</button>
+      <button onclick="testServiceWorkerNotification()">
+        Test Service Worker Notification
+      </button>
+      <button onclick="testPushNotification()">
+        Test Push-Style Notification
+      </button>
     </div>
 
     <div class="test-section">
-        <h2>5. Debug Information</h2>
-        <pre id="debugInfo"></pre>
-        <button onclick="refreshDebugInfo()">Refresh Debug Info</button>
-        <button onclick="clearLogs()">Clear Logs</button>
+      <h2>5. Debug Information</h2>
+      <pre id="debugInfo"></pre>
+      <button onclick="refreshDebugInfo()">Refresh Debug Info</button>
+      <button onclick="clearLogs()">Clear Logs</button>
     </div>
 
     <script>
-        let serviceWorkerRegistration = null;
-        let logs = [];
+      let serviceWorkerRegistration = null;
+      let logs = [];
 
-        function log(message, type = 'info') {
-            const timestamp = new Date().toLocaleTimeString();
-            logs.push(`[${timestamp}] ${type.toUpperCase()}: ${message}`);
-            console.log(`[${timestamp}] ${type.toUpperCase()}: ${message}`);
-            updateDebugInfo();
+      function log(message, type = "info") {
+        const timestamp = new Date().toLocaleTimeString();
+        logs.push(`[${timestamp}] ${type.toUpperCase()}: ${message}`);
+        console.log(`[${timestamp}] ${type.toUpperCase()}: ${message}`);
+        updateDebugInfo();
+      }
+
+      function updateStatus(elementId, message, type) {
+        const element = document.getElementById(elementId);
+        element.innerHTML = `<div class="status ${type}">${message}</div>`;
+      }
+
+      function updateDebugInfo() {
+        document.getElementById("debugInfo").textContent = logs
+          .slice(-20)
+          .join("\n");
+      }
+
+      function clearLogs() {
+        logs = [];
+        updateDebugInfo();
+      }
+
+      // 1. Check browser support
+      function checkBrowserSupport() {
+        const checks = [];
+
+        if ("serviceWorker" in navigator) {
+          checks.push("✅ Service Worker supported");
+        } else {
+          checks.push("❌ Service Worker NOT supported");
         }
 
-        function updateStatus(elementId, message, type) {
-            const element = document.getElementById(elementId);
-            element.innerHTML = `<div class="status ${type}">${message}</div>`;
+        if ("Notification" in window) {
+          checks.push("✅ Notifications supported");
+        } else {
+          checks.push("❌ Notifications NOT supported");
         }
 
-        function updateDebugInfo() {
-            document.getElementById('debugInfo').textContent = logs.slice(-20).join('\n');
+        if ("PushManager" in window) {
+          checks.push("✅ Push messaging supported");
+        } else {
+          checks.push("❌ Push messaging NOT supported");
         }
 
-        function clearLogs() {
-            logs = [];
-            updateDebugInfo();
+        if (window.isSecureContext) {
+          checks.push("✅ Secure context (HTTPS/localhost)");
+        } else {
+          checks.push("❌ NOT secure context - notifications may not work");
         }
 
-        // 1. Check browser support
-        function checkBrowserSupport() {
-            const checks = [];
-            
-            if ('serviceWorker' in navigator) {
-                checks.push('✅ Service Worker supported');
+        const message = checks.join("<br>");
+        const type = checks.some((check) => check.includes("❌"))
+          ? "warning"
+          : "success";
+        updateStatus("browserSupport", message, type);
+        log("Browser support checked", "info");
+      }
+
+      // 2. Check notification permission
+      function checkPermissionStatus() {
+        if (!("Notification" in window)) {
+          updateStatus(
+            "permissionStatus",
+            "❌ Notifications not supported",
+            "error"
+          );
+          return;
+        }
+
+        const permission = Notification.permission;
+        let message, type;
+
+        switch (permission) {
+          case "granted":
+            message = "✅ Notification permission: GRANTED";
+            type = "success";
+            break;
+          case "denied":
+            message = "❌ Notification permission: DENIED";
+            type = "error";
+            break;
+          case "default":
+            message = "⚠️ Notification permission: NOT REQUESTED";
+            type = "warning";
+            break;
+          default:
+            message = `❓ Notification permission: ${permission}`;
+            type = "info";
+        }
+
+        updateStatus("permissionStatus", message, type);
+        log(`Permission status: ${permission}`, "info");
+      }
+
+      // Request notification permission
+      async function requestPermission() {
+        if (!("Notification" in window)) {
+          log("Notifications not supported", "error");
+          return;
+        }
+
+        try {
+          log("Requesting notification permission...", "info");
+          const permission = await Notification.requestPermission();
+          log(`Permission result: ${permission}`, "info");
+          checkPermissionStatus();
+
+          if (permission === "granted") {
+            // Show a test notification immediately
+            new Notification("Permission Granted!", {
+              body: "Notifications are now enabled for this site.",
+              icon: "https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg",
+            });
+          }
+        } catch (error) {
+          log(`Error requesting permission: ${error.message}`, "error");
+        }
+      }
+
+      // 3. Service worker registration
+      async function registerServiceWorker() {
+        if (!("serviceWorker" in navigator)) {
+          log("Service Worker not supported", "error");
+          updateStatus(
+            "serviceWorkerStatus",
+            "❌ Service Worker not supported",
+            "error"
+          );
+          return;
+        }
+
+        try {
+          log("Registering service worker...", "info");
+
+          // Register with the same scope as your main app
+          serviceWorkerRegistration = await navigator.serviceWorker.register(
+            "./zuzzuu-sw.js"
+          );
+
+          log("Service worker registered successfully", "success");
+          updateStatus(
+            "serviceWorkerStatus",
+            "✅ Service Worker registered successfully",
+            "success"
+          );
+
+          // Wait for it to be ready
+          await navigator.serviceWorker.ready;
+          log("Service worker is ready", "success");
+        } catch (error) {
+          log(`Service worker registration failed: ${error.message}`, "error");
+          updateStatus(
+            "serviceWorkerStatus",
+            `❌ Registration failed: ${error.message}`,
+            "error"
+          );
+        }
+      }
+
+      async function unregisterServiceWorker() {
+        try {
+          const registrations =
+            await navigator.serviceWorker.getRegistrations();
+          for (let registration of registrations) {
+            await registration.unregister();
+            log("Service worker unregistered", "info");
+          }
+          serviceWorkerRegistration = null;
+          updateStatus(
+            "serviceWorkerStatus",
+            "⚠️ Service Worker unregistered",
+            "warning"
+          );
+        } catch (error) {
+          log(`Error unregistering: ${error.message}`, "error");
+        }
+      }
+
+      // 4. Test notifications
+      function testBasicNotification() {
+        if (Notification.permission !== "granted") {
+          log("Cannot test - permission not granted", "error");
+          updateStatus(
+            "notificationTest",
+            "❌ Permission not granted",
+            "error"
+          );
+          return;
+        }
+
+        try {
+          const notification = new Notification("Basic Test Notification", {
+            body: "This is a basic notification test from the main thread.",
+            icon: "https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg",
+            tag: "basic-test",
+          });
+
+          notification.onclick = function () {
+            log("Basic notification clicked", "info");
+            this.close();
+          };
+
+          log("Basic notification shown", "success");
+          updateStatus(
+            "notificationTest",
+            "✅ Basic notification shown",
+            "success"
+          );
+        } catch (error) {
+          log(`Basic notification failed: ${error.message}`, "error");
+          updateStatus(
+            "notificationTest",
+            `❌ Basic test failed: ${error.message}`,
+            "error"
+          );
+        }
+      }
+
+      async function testServiceWorkerNotification() {
+        if (!serviceWorkerRegistration) {
+          log("Cannot test - service worker not registered", "error");
+          updateStatus(
+            "notificationTest",
+            "❌ Service worker not registered",
+            "error"
+          );
+          return;
+        }
+
+        if (Notification.permission !== "granted") {
+          log("Cannot test - permission not granted", "error");
+          updateStatus(
+            "notificationTest",
+            "❌ Permission not granted",
+            "error"
+          );
+          return;
+        }
+
+        try {
+          await serviceWorkerRegistration.showNotification(
+            "Service Worker Test",
+            {
+              body: "This notification is shown via the service worker.",
+              icon: "https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg",
+              tag: "sw-test",
+              requireInteraction: true,
+              actions: [
+                { action: "open", title: "Open" },
+                { action: "close", title: "Close" },
+              ],
+              data: {
+                url: window.location.href,
+                timestamp: Date.now(),
+              },
+            }
+          );
+
+          log("Service worker notification shown", "success");
+          updateStatus(
+            "notificationTest",
+            "✅ Service worker notification shown",
+            "success"
+          );
+        } catch (error) {
+          log(`Service worker notification failed: ${error.message}`, "error");
+          updateStatus(
+            "notificationTest",
+            `❌ SW test failed: ${error.message}`,
+            "error"
+          );
+        }
+      }
+
+      async function testPushNotification() {
+        if (!serviceWorkerRegistration) {
+          log("Cannot test - service worker not registered", "error");
+          return;
+        }
+
+        try {
+          // Simulate a push message by sending to service worker
+          if (serviceWorkerRegistration.active) {
+            serviceWorkerRegistration.active.postMessage({
+              type: "TEST_PUSH_NOTIFICATION",
+              data: {
+                title: "Push Test Notification",
+                message:
+                  "This simulates a push notification when browser is closed.",
+                url: window.location.href,
+              },
+            });
+            log(
+              "Push notification simulation sent to service worker",
+              "success"
+            );
+          }
+        } catch (error) {
+          log(`Push test failed: ${error.message}`, "error");
+        }
+      }
+
+      function refreshDebugInfo() {
+        checkBrowserSupport();
+        checkPermissionStatus();
+
+        // Check service worker status
+        if ("serviceWorker" in navigator) {
+          navigator.serviceWorker.getRegistrations().then((registrations) => {
+            if (registrations.length > 0) {
+              updateStatus(
+                "serviceWorkerStatus",
+                `✅ ${registrations.length} service worker(s) registered`,
+                "success"
+              );
+              log(
+                `Found ${registrations.length} service worker registrations`,
+                "info"
+              );
             } else {
-                checks.push('❌ Service Worker NOT supported');
+              updateStatus(
+                "serviceWorkerStatus",
+                "⚠️ No service workers registered",
+                "warning"
+              );
+              log("No service worker registrations found", "warning");
             }
-
-            if ('Notification' in window) {
-                checks.push('✅ Notifications supported');
-            } else {
-                checks.push('❌ Notifications NOT supported');
-            }
-
-            if ('PushManager' in window) {
-                checks.push('✅ Push messaging supported');
-            } else {
-                checks.push('❌ Push messaging NOT supported');
-            }
-
-            if (window.isSecureContext) {
-                checks.push('✅ Secure context (HTTPS/localhost)');
-            } else {
-                checks.push('❌ NOT secure context - notifications may not work');
-            }
-
-            const message = checks.join('<br>');
-            const type = checks.some(check => check.includes('❌')) ? 'warning' : 'success';
-            updateStatus('browserSupport', message, type);
-            log('Browser support checked', 'info');
+          });
         }
 
-        // 2. Check notification permission
-        function checkPermissionStatus() {
-            if (!('Notification' in window)) {
-                updateStatus('permissionStatus', '❌ Notifications not supported', 'error');
-                return;
-            }
+        log("Debug info refreshed", "info");
+      }
 
-            const permission = Notification.permission;
-            let message, type;
-
-            switch (permission) {
-                case 'granted':
-                    message = '✅ Notification permission: GRANTED';
-                    type = 'success';
-                    break;
-                case 'denied':
-                    message = '❌ Notification permission: DENIED';
-                    type = 'error';
-                    break;
-                case 'default':
-                    message = '⚠️ Notification permission: NOT REQUESTED';
-                    type = 'warning';
-                    break;
-                default:
-                    message = `❓ Notification permission: ${permission}`;
-                    type = 'info';
-            }
-
-            updateStatus('permissionStatus', message, type);
-            log(`Permission status: ${permission}`, 'info');
-        }
-
-        // Request notification permission
-        async function requestPermission() {
-            if (!('Notification' in window)) {
-                log('Notifications not supported', 'error');
-                return;
-            }
-
-            try {
-                log('Requesting notification permission...', 'info');
-                const permission = await Notification.requestPermission();
-                log(`Permission result: ${permission}`, 'info');
-                checkPermissionStatus();
-
-                if (permission === 'granted') {
-                    // Show a test notification immediately
-                    new Notification('Permission Granted!', {
-                        body: 'Notifications are now enabled for this site.',
-                        icon: 'https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg'
-                    });
-                }
-            } catch (error) {
-                log(`Error requesting permission: ${error.message}`, 'error');
-            }
-        }
-
-        // 3. Service worker registration
-        async function registerServiceWorker() {
-            if (!('serviceWorker' in navigator)) {
-                log('Service Worker not supported', 'error');
-                updateStatus('serviceWorkerStatus', '❌ Service Worker not supported', 'error');
-                return;
-            }
-
-            try {
-                log('Registering service worker...', 'info');
-                
-                // Register with the same scope as your main app
-                serviceWorkerRegistration = await navigator.serviceWorker.register('./zuzzuu-sw.js');
-                
-                log('Service worker registered successfully', 'success');
-                updateStatus('serviceWorkerStatus', '✅ Service Worker registered successfully', 'success');
-                
-                // Wait for it to be ready
-                await navigator.serviceWorker.ready;
-                log('Service worker is ready', 'success');
-                
-            } catch (error) {
-                log(`Service worker registration failed: ${error.message}`, 'error');
-                updateStatus('serviceWorkerStatus', `❌ Registration failed: ${error.message}`, 'error');
-            }
-        }
-
-        async function unregisterServiceWorker() {
-            try {
-                const registrations = await navigator.serviceWorker.getRegistrations();
-                for (let registration of registrations) {
-                    await registration.unregister();
-                    log('Service worker unregistered', 'info');
-                }
-                serviceWorkerRegistration = null;
-                updateStatus('serviceWorkerStatus', '⚠️ Service Worker unregistered', 'warning');
-            } catch (error) {
-                log(`Error unregistering: ${error.message}`, 'error');
-            }
-        }
-
-        // 4. Test notifications
-        function testBasicNotification() {
-            if (Notification.permission !== 'granted') {
-                log('Cannot test - permission not granted', 'error');
-                updateStatus('notificationTest', '❌ Permission not granted', 'error');
-                return;
-            }
-
-            try {
-                const notification = new Notification('Basic Test Notification', {
-                    body: 'This is a basic notification test from the main thread.',
-                    icon: 'https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg',
-                    tag: 'basic-test'
-                });
-
-                notification.onclick = function() {
-                    log('Basic notification clicked', 'info');
-                    this.close();
-                };
-
-                log('Basic notification shown', 'success');
-                updateStatus('notificationTest', '✅ Basic notification shown', 'success');
-            } catch (error) {
-                log(`Basic notification failed: ${error.message}`, 'error');
-                updateStatus('notificationTest', `❌ Basic test failed: ${error.message}`, 'error');
-            }
-        }
-
-        async function testServiceWorkerNotification() {
-            if (!serviceWorkerRegistration) {
-                log('Cannot test - service worker not registered', 'error');
-                updateStatus('notificationTest', '❌ Service worker not registered', 'error');
-                return;
-            }
-
-            if (Notification.permission !== 'granted') {
-                log('Cannot test - permission not granted', 'error');
-                updateStatus('notificationTest', '❌ Permission not granted', 'error');
-                return;
-            }
-
-            try {
-                await serviceWorkerRegistration.showNotification('Service Worker Test', {
-                    body: 'This notification is shown via the service worker.',
-                    icon: 'https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg',
-                    tag: 'sw-test',
-                    requireInteraction: true,
-                    actions: [
-                        { action: 'open', title: 'Open' },
-                        { action: 'close', title: 'Close' }
-                    ],
-                    data: {
-                        url: window.location.href,
-                        timestamp: Date.now()
-                    }
-                });
-
-                log('Service worker notification shown', 'success');
-                updateStatus('notificationTest', '✅ Service worker notification shown', 'success');
-            } catch (error) {
-                log(`Service worker notification failed: ${error.message}`, 'error');
-                updateStatus('notificationTest', `❌ SW test failed: ${error.message}`, 'error');
-            }
-        }
-
-        async function testPushNotification() {
-            if (!serviceWorkerRegistration) {
-                log('Cannot test - service worker not registered', 'error');
-                return;
-            }
-
-            try {
-                // Simulate a push message by sending to service worker
-                if (serviceWorkerRegistration.active) {
-                    serviceWorkerRegistration.active.postMessage({
-                        type: 'TEST_PUSH_NOTIFICATION',
-                        data: {
-                            title: 'Push Test Notification',
-                            message: 'This simulates a push notification when browser is closed.',
-                            url: window.location.href
-                        }
-                    });
-                    log('Push notification simulation sent to service worker', 'success');
-                }
-            } catch (error) {
-                log(`Push test failed: ${error.message}`, 'error');
-            }
-        }
-
-        function refreshDebugInfo() {
-            checkBrowserSupport();
-            checkPermissionStatus();
-            
-            // Check service worker status
-            if ('serviceWorker' in navigator) {
-                navigator.serviceWorker.getRegistrations().then(registrations => {
-                    if (registrations.length > 0) {
-                        updateStatus('serviceWorkerStatus', 
-                            `✅ ${registrations.length} service worker(s) registered`, 'success');
-                        log(`Found ${registrations.length} service worker registrations`, 'info');
-                    } else {
-                        updateStatus('serviceWorkerStatus', '⚠️ No service workers registered', 'warning');
-                        log('No service worker registrations found', 'warning');
-                    }
-                });
-            }
-
-            log('Debug info refreshed', 'info');
-        }
-
-        // Initialize on page load
-        document.addEventListener('DOMContentLoaded', function() {
-            log('Debug test page loaded', 'info');
-            refreshDebugInfo();
-        });
+      // Initialize on page load
+      document.addEventListener("DOMContentLoaded", function () {
+        log("Debug test page loaded", "info");
+        refreshDebugInfo();
+      });
     </script>
-</body>
+  </body>
 </html>

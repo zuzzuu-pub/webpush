@@ -2071,45 +2071,59 @@
     <!-- Automatic Service Worker Registration (Flutter-style) -->
     <script>
       // Automatically register service worker on page load (like Flutter web)
-      if ('serviceWorker' in navigator) {
-        window.addEventListener('load', function () {
-          console.log('[Auto-SW] Registering service worker automatically...');
-          
-          navigator.serviceWorker.register('zuzzuu-sw.js', {
-            scope: '/', // Use root scope for broader coverage
-          })
-          .then(function(registration) {
-            console.log('[Auto-SW] Service Worker registered successfully:', registration);
-            
-            // Automatically request notification permission if not already granted
-            if ('Notification' in window && Notification.permission === 'default') {
-              console.log('[Auto-SW] Requesting notification permission...');
-              Notification.requestPermission().then(function(permission) {
-                console.log('[Auto-SW] Notification permission:', permission);
-                if (permission === 'granted') {
-                  // Show a welcome notification
-                  registration.showNotification('Zuzzuu Notifications Active', {
-                    body: 'Push notifications are now enabled! You\'ll receive notifications even when the browser is closed.',
-                    icon: 'https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg',
-                    badge: 'https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg',
-                    tag: 'zuzzuu-auto-setup',
-                    requireInteraction: false,
-                    silent: false,
-                    data: {
-                      url: window.location.href,
-                      source: 'auto-setup'
-                    }
-                  });
-                }
-              });
-            }
-          })
-          .catch(function(error) {
-            console.error('[Auto-SW] Service Worker registration failed:', error);
-          });
+      if ("serviceWorker" in navigator) {
+        window.addEventListener("load", function () {
+          console.log("[Auto-SW] Registering service worker automatically...");
+
+          navigator.serviceWorker
+            .register("zuzzuu-sw.js", {
+              scope: "/", // Use root scope for broader coverage
+            })
+            .then(function (registration) {
+              console.log(
+                "[Auto-SW] Service Worker registered successfully:",
+                registration
+              );
+
+              // Automatically request notification permission if not already granted
+              if (
+                "Notification" in window &&
+                Notification.permission === "default"
+              ) {
+                console.log("[Auto-SW] Requesting notification permission...");
+                Notification.requestPermission().then(function (permission) {
+                  console.log("[Auto-SW] Notification permission:", permission);
+                  if (permission === "granted") {
+                    // Show a welcome notification
+                    registration.showNotification(
+                      "Zuzzuu Notifications Active",
+                      {
+                        body: "Push notifications are now enabled! You'll receive notifications even when the browser is closed.",
+                        icon: "https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg",
+                        badge:
+                          "https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg",
+                        tag: "zuzzuu-auto-setup",
+                        requireInteraction: false,
+                        silent: false,
+                        data: {
+                          url: window.location.href,
+                          source: "auto-setup",
+                        },
+                      }
+                    );
+                  }
+                });
+              }
+            })
+            .catch(function (error) {
+              console.error(
+                "[Auto-SW] Service Worker registration failed:",
+                error
+              );
+            });
         });
       } else {
-        console.warn('[Auto-SW] Service Workers not supported in this browser');
+        console.warn("[Auto-SW] Service Workers not supported in this browser");
       }
     </script>
   </body>
