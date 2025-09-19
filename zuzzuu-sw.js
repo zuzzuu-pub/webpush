@@ -263,14 +263,12 @@ function showBrowserNotificationFromWebSocket(notificationData) {
   try {
     console.log('[SW] WebSocket notificationData:', JSON.stringify(notificationData, null, 2));
 
-    // Check for image_url or image in nested template if main fields are null/empty
+    // Check for logo_url in nested template if main logo_url is null/empty
     const logoUrl = notificationData.logo_url ||
                    (notificationData.template && notificationData.template.logo_url) ||
                    'https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg';
-    const imageUrl = notificationData.image_url || notificationData.image ||
-                    (notificationData.template && notificationData.template.image_url) ||
-                    (notificationData.template && notificationData.template.image) ||
-                    undefined;
+    // Check for image_url (matching the main thread logic from zuzzuu-notification.js)
+    const imageUrl = notificationData.image_url || undefined;
 
     console.log('[SW] WebSocket imageUrl resolved to:', imageUrl);
 
