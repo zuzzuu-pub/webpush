@@ -49,7 +49,7 @@ self.addEventListener('message', function(event) {
     case 'SET_SUBSCRIBER_ID':
       subscriberId = data.subscriberId;
       console.log('[SW] Subscriber ID set:', subscriberId);
-      broadcastToClients({ 
+      broadcastToClients({
         type: 'SUBSCRIBER_ID_SET',
         data: { subscriberId: subscriberId }
       });
@@ -60,7 +60,7 @@ self.addEventListener('message', function(event) {
     case 'CLAIM_CLIENTS':
       self.clients.claim().then(() => {
         console.log('[SW] Service worker claimed all clients');
-        broadcastToClients({ 
+        broadcastToClients({
           type: 'SERVICE_WORKER_READY',
           data: { ready: true }
         });
@@ -68,8 +68,8 @@ self.addEventListener('message', function(event) {
       break;
     case 'GET_CONNECTION_STATUS':
       if (event.ports && event.ports[0]) {
-        event.ports[0].postMessage({ 
-          type: 'CONNECTION_STATUS', 
+        event.ports[0].postMessage({
+          type: 'CONNECTION_STATUS',
           connected: isConnected,
           subscriberId: subscriberId
         });
@@ -77,12 +77,22 @@ self.addEventListener('message', function(event) {
       break;
     case 'GET_STATUS':
       if (event.ports && event.ports[0]) {
-        event.ports[0].postMessage({ 
-          type: 'STATUS_RESPONSE', 
+        event.ports[0].postMessage({
+          type: 'STATUS_RESPONSE',
           subscriberId: subscriberId,
           connected: isConnected
         });
       }
+      break;
+    case 'SIMULATE_WEBSOCKET_MESSAGE':
+      // Test simulation for WebSocket messages
+      console.log('[SW] Simulating WebSocket message:', data);
+      handleWebSocketMessage({ data: JSON.stringify(data) });
+      break;
+    case 'SIMULATE_PUSH_MESSAGE':
+      // Test simulation for Push messages
+      console.log('[SW] Simulating Push message:', data);
+      showBrowserNotification(data);
       break;
   }
 });
@@ -262,6 +272,7 @@ function handleWebSocketMessage(event) {
 function showBrowserNotificationFromWebSocket(notificationData) {
   try {
     console.log('[SW] WebSocket notificationData:', JSON.stringify(notificationData, null, 2));
+    console.log('[SW] WebSocket notificationData keys:', Object.keys(notificationData));
 
     // Check for logo_url in nested template if main logo_url is null/empty
     const logoUrl = notificationData.logo_url ||
@@ -269,6 +280,14 @@ function showBrowserNotificationFromWebSocket(notificationData) {
                    'https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg';
     
     // Enhanced image URL handling - check multiple possible fields like the custom notification does
+    console.log('[SW] Checking for image_url in these fields:');
+    console.log('[SW] - notificationData.image_url:', notificationData.image_url);
+    console.log('[SW] - notificationData.image:', notificationData.image);
+    console.log('[SW] - notificationData.template?.image_url:', notificationData.template && notificationData.template.image_url);
+    console.log('[SW] - notificationData.template?.image:', notificationData.template && notificationData.template.image);
+    console.log('[SW] - notificationData.data?.image_url:', notificationData.data && notificationData.data.image_url);
+    console.log('[SW] - notificationData.data?.image:', notificationData.data && notificationData.data.image);
+    
     const imageUrl = notificationData.image_url ||
                      notificationData.image ||
                      (notificationData.template && notificationData.template.image_url) ||
@@ -279,6 +298,14 @@ function showBrowserNotificationFromWebSocket(notificationData) {
 
     console.log('[SW] WebSocket imageUrl resolved to:', imageUrl);
     console.log('[SW] WebSocket notification will include image:', imageUrl ? 'YES' : 'NO');
+    
+    // Validate image URL if present
+    if (imageUrl) {
+      console.log('[SW] Image URL validation:');
+      console.log('[SW] - Is valid URL format:', /^https?:\/\//.test(imageUrl));
+      console.log('[SW] - Is Cloudinary URL:', imageUrl.includes('cloudinary.com'));
+      console.log('[SW] - URL length:', imageUrl.length);
+    }
 
     const title = notificationData.title || 'New Notification from Zuzzuu';
     const options = {

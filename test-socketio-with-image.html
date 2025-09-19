@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Socket.IO Notification Image Test</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+        background: #f5f5f5;
+      }
+      .test-section {
+        background: white;
+        padding: 20px;
+        margin: 20px 0;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      }
+      .status {
+        padding: 10px;
+        margin: 10px 0;
+        border-radius: 4px;
+      }
+      .success {
+        background: #d4edda;
+        color: #155724;
+      }
+      .error {
+        background: #f8d7da;
+        color: #721c24;
+      }
+      .warning {
+        background: #fff3cd;
+        color: #856404;
+      }
+      .info {
+        background: #d1ecf1;
+        color: #0c5460;
+      }
+      button {
+        background: #007bff;
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 4px;
+        cursor: pointer;
+        margin: 5px;
+      }
+      button:hover {
+        background: #0056b3;
+      }
+      pre {
+        background: #f8f9fa;
+        padding: 10px;
+        border-radius: 4px;
+        overflow-x: auto;
+        font-size: 12px;
+        max-height: 200px;
+        overflow-y: auto;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>🖼️ Socket.IO Notification Image Test</h1>
+    <p>
+      This test simulates Socket.IO notifications with images to verify service
+      worker handling.
+    </p>
+
+    <div class="test-section">
+      <h2>1. Service Worker Setup</h2>
+      <div id="swStatus"></div>
+      <button onclick="registerServiceWorker()">Register Service Worker</button>
+    </div>
+
+    <div class="test-section">
+      <h2>2. Notification Permission</h2>
+      <div id="permissionStatus"></div>
+      <button onclick="requestPermission()">Request Permission</button>
+    </div>
+
+    <div class="test-section">
+      <h2>3. Test Socket.IO Notifications with Images</h2>
+      <div id="testStatus"></div>
+      <button onclick="testSocketIONotificationWithImage()">
+        Test Socket.IO Notification (With Image)
+      </button>
+      <button onclick="testSocketIONotificationNoImage()">
+        Test Socket.IO Notification (No Image)
+      </button>
+      <button onclick="testPushNotificationWithImage()">
+        Test Push Notification (With Image)
+      </button>
+    </div>
+
+    <div class="test-section">
+      <h2>4. Initialize Zuzzuu Notification</h2>
+      <div id="zuzzuuStatus"></div>
+      <button onclick="initializeZuzzuu()">Initialize Zuzzuu</button>
+      <button onclick="testCustomNotificationWithImage()">
+        Test Custom Notification (With Image)
+      </button>
+    </div>
+
+    <div class="test-section">
+      <h2>5. Debug Log</h2>
+      <pre id="debugLog"></pre>
+      <button onclick="clearLog()">Clear Log</button>
+    </div>
+
+    <script src="zuzzuu-notification.js"></script>
+    <script>
+      let serviceWorkerRegistration = null;
+      let zuzzuuNotification = null;
+      let logs = [];
+
+      function log(message, type = "info") {
+        const timestamp = new Date().toLocaleTimeString();
+        const logEntry = `[${timestamp}] ${type.toUpperCase()}: ${message}`;
+        logs.push(logEntry);
+        console.log(logEntry);
+        updateDebugLog();
+      }
+
+      function updateStatus(elementId, message, type) {
+        const element = document.getElementById(elementId);
+        element.innerHTML = `<div class="status ${type}">${message}</div>`;
+      }
+
+      function updateDebugLog() {
+        document.getElementById("debugLog").textContent = logs
+          .slice(-30)
+          .join("\n");
+      }
+
+      function clearLog() {
+        logs = [];
+        updateDebugLog();
+      }
+
+      // Register service worker
+      async function registerServiceWorker() {
+        if (!("serviceWorker" in navigator)) {
+          log("Service Worker not supported", "error");
+          updateStatus("swStatus", "❌ Service Worker not supported", "error");
+          return;
+        }
+
+        try {
+          log("Registering service worker...", "info");
+          serviceWorkerRegistration = await navigator.serviceWorker.register(
+            "./zuzzuu-sw.js"
+          );
+
+          await navigator.serviceWorker.ready;
+          log("Service worker registered and ready", "success");
+          updateStatus(
+            "swStatus",
+            "✅ Service Worker registered and ready",
+            "success"
+          );
+
+          // Set up message listener for service worker responses
+          navigator.serviceWorker.addEventListener("message", (event) => {
+            log(
+              `SW Message: ${event.data.type} - ${JSON.stringify(
+                event.data.data || {}
+              )}`,
+              "info"
+            );
+          });
+        } catch (error) {
+          log(`Service worker registration failed: ${error.message}`, "error");
+          updateStatus(
+            "swStatus",
+            `❌ Registration failed: ${error.message}`,
+            "error"
+          );
+        }
+      }
+
+      // Request notification permission
+      async function requestPermission() {
+        if (!("Notification" in window)) {
+          log("Notifications not supported", "error");
+          updateStatus(
+            "permissionStatus",
+            "❌ Notifications not supported",
+            "error"
+          );
+          return;
+        }
+
+        try {
+          const permission = await Notification.requestPermission();
+          log(`Permission result: ${permission}`, "info");
+
+          if (permission === "granted") {
+            updateStatus(
+              "permissionStatus",
+              "✅ Notification permission granted",
+              "success"
+            );
+          } else {
+            updateStatus(
+              "permissionStatus",
+              "❌ Notification permission denied",
+              "error"
+            );
+          }
+        } catch (error) {
+          log(`Error requesting permission: ${error.message}`, "error");
+        }
+      }
+
+      // Test Socket.IO notification with image
+      async function testSocketIONotificationWithImage() {
+        if (!serviceWorkerRegistration) {
+          log("Service worker not registered", "error");
+          updateStatus(
+            "testStatus",
+            "❌ Service worker not registered",
+            "error"
+          );
+          return;
+        }
+
+        log("Testing Socket.IO notification with image...", "info");
+
+        // Simulate Socket.IO message with image
+        const socketIOMessage = {
+          type: "notification",
+          data: {
+            id: "test-socketio-" + Date.now(),
+            title: "Socket.IO Test with Image",
+            message: "This notification should display an image from Socket.IO",
+            image_url:
+              "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=400&h=200&fit=crop",
+            logo_url:
+              "https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg",
+            url: "https://example.com",
+            timestamp: new Date().toISOString(),
+          },
+        };
+
+        log(
+          `Sending Socket.IO message: ${JSON.stringify(
+            socketIOMessage,
+            null,
+            2
+          )}`,
+          "info"
+        );
+
+        // Send to service worker to simulate WebSocket message
+        if (serviceWorkerRegistration.active) {
+          serviceWorkerRegistration.active.postMessage({
+            type: "SIMULATE_WEBSOCKET_MESSAGE",
+            data: socketIOMessage,
+          });
+
+          log(
+            "Socket.IO notification with image sent to service worker",
+            "success"
+          );
+          updateStatus(
+            "testStatus",
+            "✅ Socket.IO notification with image sent",
+            "success"
+          );
+        }
+      }
+
+      // Test Socket.IO notification without image
+      async function testSocketIONotificationNoImage() {
+        if (!serviceWorkerRegistration) {
+          log("Service worker not registered", "error");
+          return;
+        }
+
+        log("Testing Socket.IO notification without image...", "info");
+
+        const socketIOMessage = {
+          type: "notification",
+          data: {
+            id: "test-socketio-no-image-" + Date.now(),
+            title: "Socket.IO Test without Image",
+            message: "This notification has no image",
+            logo_url:
+              "https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg",
+            url: "https://example.com",
+            timestamp: new Date().toISOString(),
+          },
+        };
+
+        if (serviceWorkerRegistration.active) {
+          serviceWorkerRegistration.active.postMessage({
+            type: "SIMULATE_WEBSOCKET_MESSAGE",
+            data: socketIOMessage,
+          });
+
+          log("Socket.IO notification without image sent", "success");
+        }
+      }
+
+      // Test push notification with image
+      async function testPushNotificationWithImage() {
+        if (!serviceWorkerRegistration) {
+          log("Service worker not registered", "error");
+          return;
+        }
+
+        log("Testing Push notification with image...", "info");
+
+        const pushMessage = {
+          title: "Push Test with Image",
+          message: "This push notification should display an image",
+          image_url:
+            "https://images.unsplash.com/photo-1434056886845-dac89ffe9b56?w=400&h=200&fit=crop",
+          logo_url:
+            "https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg",
+          url: "https://example.com",
+          id: "test-push-" + Date.now(),
+        };
+
+        if (serviceWorkerRegistration.active) {
+          serviceWorkerRegistration.active.postMessage({
+            type: "SIMULATE_PUSH_MESSAGE",
+            data: pushMessage,
+          });
+
+          log("Push notification with image sent", "success");
+        }
+      }
+
+      // Initialize Zuzzuu Notification
+      function initializeZuzzuu() {
+        try {
+          zuzzuuNotification = new ZuzzuuNotification({
+            debug: true,
+            autoConnect: false,
+          });
+
+          log("Zuzzuu Notification initialized", "success");
+          updateStatus(
+            "zuzzuuStatus",
+            "✅ Zuzzuu Notification initialized",
+            "success"
+          );
+        } catch (error) {
+          log(`Error initializing Zuzzuu: ${error.message}`, "error");
+          updateStatus(
+            "zuzzuuStatus",
+            `❌ Failed to initialize: ${error.message}`,
+            "error"
+          );
+        }
+      }
+
+      // Test custom notification with image
+      function testCustomNotificationWithImage() {
+        if (!zuzzuuNotification) {
+          log("Zuzzuu not initialized", "error");
+          return;
+        }
+
+        const notificationData = {
+          id: "test-custom-" + Date.now(),
+          title: "Custom Test with Image",
+          message: "This is a custom notification with image",
+          image_url:
+            "https://images.unsplash.com/photo-1546484475-7f7bd55792da?w=400&h=200&fit=crop",
+          logo_url:
+            "https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg",
+          url: "https://example.com",
+        };
+
+        log("Testing custom notification with image...", "info");
+        zuzzuuNotification.handleNotification(notificationData);
+        log("Custom notification with image sent", "success");
+      }
+
+      // Initialize on page load
+      document.addEventListener("DOMContentLoaded", function () {
+        log("Socket.IO Image Test page loaded", "info");
+
+        // Check initial states
+        if ("serviceWorker" in navigator) {
+          log("Service Worker supported", "success");
+        } else {
+          log("Service Worker not supported", "error");
+        }
+
+        if ("Notification" in window) {
+          log(`Notification permission: ${Notification.permission}`, "info");
+          updateStatus(
+            "permissionStatus",
+            `Notification permission: ${Notification.permission}`,
+            Notification.permission === "granted" ? "success" : "warning"
+          );
+        }
+      });
+    </script>
+  </body>
+</html>
