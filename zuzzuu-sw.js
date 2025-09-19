@@ -265,10 +265,10 @@ function showBrowserNotificationFromWebSocket(notificationData) {
     const logoUrl = notificationData.logo_url || 
                    (notificationData.template && notificationData.template.logo_url) || 
                    'https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg';
-    const imageUrl = notificationData.image_url || 
-                    (notificationData.template && notificationData.template.image_url) || 
-                    '';
-    
+    const imageUrl = notificationData.image_url ||
+                    (notificationData.template && notificationData.template.image_url) ||
+                    undefined;
+
     const title = notificationData.title || 'New Notification from Zuzzuu';
     const options = {
       body: notificationData.message || '',
