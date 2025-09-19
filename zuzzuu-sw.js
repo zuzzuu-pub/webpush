@@ -232,7 +232,7 @@ function disconnectWebSocket() {
 }
 
 // Handle WebSocket messages and show real-time notifications
-function handleWebSocketMessage(event) {
+async function handleWebSocketMessage(event) {
   try {
     const data = JSON.parse(event.data);
     console.log('[SW] WebSocket message received:', data);
@@ -243,14 +243,27 @@ function handleWebSocketMessage(event) {
 
       console.log('[SW] Processing WebSocket notification data:', notificationData);
 
+      // Check if image_url exists but appears to be loading/null
+      const hasImageField = notificationData.image_url !== undefined ||
+                           notificationData.image !== undefined ||
+                           (notificationData.template && (notificationData.template.image_url !== undefined || notificationData.template.image !== undefined)) ||
+                           (notificationData.data && (notificationData.data.image_url !== undefined || notificationData.data.image !== undefined));
+      
+      // Add delay if we detect fast data arrival with potential image loading
+      if (hasImageField) {
+        console.log('[SW] Image field detected - adding delay to ensure image loading completes');
+        await new Promise(resolve => setTimeout(resolve, 500)); // 500ms delay for image loading
+        console.log('[SW] Image loading delay completed');
+      }
+
       // Forward notification to main thread
       broadcastToClients({
         type: 'NOTIFICATION_RECEIVED',
         data: notificationData
       });
 
-      // Show browser notification immediately for real-time notifications
-      showBrowserNotificationFromWebSocket(notificationData);
+      // Show browser notification with proper image handling
+      await showBrowserNotificationFromWebSocket(notificationData);
       
     } else if (data.type === 'connection_established') {
       console.log('[SW] WebSocket connection established');
@@ -354,10 +367,10 @@ async function showBrowserNotificationFromWebSocket(notificationData) {
   }
 }
 
-// Preload and validate image for notification
-async function preloadAndValidateImage(imageUrl) {
+// Enhanced preload and validate image with retry mechanism
+async function preloadAndValidateImage(imageUrl, retryCount = 0, maxRetries = 3) {
   try {
-    console.log('[SW] Preloading image:', imageUrl);
+    console.log('[SW] Preloading image (attempt', retryCount + 1, '/', maxRetries + 1, '):', imageUrl);
     
     // Basic URL validation
     if (!imageUrl || typeof imageUrl !== 'string') {
@@ -370,43 +383,107 @@ async function preloadAndValidateImage(imageUrl) {
       return null;
     }
     
+    // Add progressive delay for retries (200ms, 500ms, 1000ms)
+    if (retryCount > 0) {
+      const delay = Math.min(200 * Math.pow(2, retryCount - 1), 1000);
+      console.log(`[SW] Waiting ${delay}ms before retry...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+    
     // Try to fetch the image to validate it exists and is accessible
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
     
     try {
-      const response = await fetch(imageUrl, {
-        method: 'HEAD', // Only get headers, not the full image
+      // First try a HEAD request
+      let response = await fetch(imageUrl, {
+        method: 'HEAD',
         signal: controller.signal,
-        mode: 'cors', // Allow CORS
-        cache: 'force-cache' // Use cache if available
+        mode: 'cors',
+        cache: 'force-cache'
       });
       
       clearTimeout(timeoutId);
       
       if (!response.ok) {
-        console.log('[SW] Image fetch failed:', response.status, response.statusText);
-        return null;
+        console.log('[SW] HEAD request failed:', response.status, response.statusText);
+        
+        // If HEAD fails, try GET request (some servers don't support HEAD)
+        const getController = new AbortController();
+        const getTimeoutId = setTimeout(() => getController.abort(), 15000);
+        
+        try {
+          response = await fetch(imageUrl, {
+            method: 'GET',
+            signal: getController.signal,
+            mode: 'cors',
+            cache: 'force-cache'
+          });
+          
+          clearTimeout(getTimeoutId);
+          
+          if (!response.ok) {
+            console.log('[SW] GET request also failed:', response.status, response.statusText);
+            
+            // Retry if we haven't reached max retries
+            if (retryCount < maxRetries) {
+              console.log('[SW] Retrying image validation...');
+              return await preloadAndValidateImage(imageUrl, retryCount + 1, maxRetries);
+            }
+            
+            return null;
+          }
+        } catch (getError) {
+          clearTimeout(getTimeoutId);
+          console.log('[SW] GET request error:', getError.message);
+          
+          // Retry if we haven't reached max retries
+          if (retryCount < maxRetries) {
+            console.log('[SW] Retrying image validation after GET error...');
+            return await preloadAndValidateImage(imageUrl, retryCount + 1, maxRetries);
+          }
+          
+          // If all requests fail but it's a CORS issue, still try to use the image
+          if (getError.name === 'TypeError' || getError.message.includes('CORS')) {
+            console.log('[SW] CORS issue detected, attempting to use image anyway');
+            return imageUrl;
+          }
+          
+          return null;
+        }
       }
       
       // Check if it's actually an image
       const contentType = response.headers.get('content-type');
-      if (!contentType || !contentType.startsWith('image/')) {
+      if (contentType && !contentType.startsWith('image/')) {
         console.log('[SW] URL is not an image, content-type:', contentType);
+        
+        // Retry if we haven't reached max retries (content might be loading)
+        if (retryCount < maxRetries) {
+          console.log('[SW] Retrying - content might still be loading...');
+          return await preloadAndValidateImage(imageUrl, retryCount + 1, maxRetries);
+        }
+        
         return null;
       }
       
-      console.log('[SW] ✅ Image validation successful');
+      console.log('[SW] ✅ Image validation successful after', retryCount + 1, 'attempts');
       return imageUrl;
       
     } catch (fetchError) {
       clearTimeout(timeoutId);
       console.log('[SW] Image fetch error:', fetchError.message);
       
-      // If CORS fails, still try to use the image - browsers might handle it differently for notifications
+      // Retry if we haven't reached max retries
+      if (retryCount < maxRetries) {
+        console.log('[SW] Retrying image validation after fetch error...');
+        return await preloadAndValidateImage(imageUrl, retryCount + 1, maxRetries);
+      }
+      
+      // If all retries fail but it's a CORS issue, still try to use the image
       if (fetchError.name === 'TypeError' || fetchError.message.includes('CORS')) {
-        console.log('[SW] CORS issue detected, but attempting to use image anyway');
-        return imageUrl; // Return original URL, let browser notification handle CORS
+        console.log('[SW] CORS issue detected after retries, attempting to use image anyway');
+        return imageUrl;
       }
       
       return null;
@@ -414,6 +491,13 @@ async function preloadAndValidateImage(imageUrl) {
     
   } catch (error) {
     console.error('[SW] Image preload error:', error);
+    
+    // Retry if we haven't reached max retries
+    if (retryCount < maxRetries) {
+      console.log('[SW] Retrying image validation after general error...');
+      return await preloadAndValidateImage(imageUrl, retryCount + 1, maxRetries);
+    }
+    
     return null;
   }
 }
@@ -504,75 +588,88 @@ function broadcastToClients(message) {
 self.addEventListener('push', function(event) {
   console.log('[SW] Push notification received, event data:', event.data ? 'present' : 'empty');
 
-  let notificationData = {};
+  async function handlePushNotificationWithDelay() {
+    let notificationData = {};
 
-  // Parse notification data with enhanced error handling (supports Firebase and custom formats)
-  if (event.data) {
-    try {
-      const rawData = event.data.text();
-      console.log('[SW] Raw push data:', rawData);
-      
-      // Try to parse as JSON first
+    // Parse notification data with enhanced error handling (supports Firebase and custom formats)
+    if (event.data) {
       try {
-        const parsedData = JSON.parse(rawData);
-        console.log('[SW] Parsed JSON notification data:', parsedData);
+        const rawData = event.data.text();
+        console.log('[SW] Raw push data:', rawData);
         
-        // Handle Firebase FCM format: { notification: {...}, data: {...} }
-        if (parsedData.notification) {
+        // Try to parse as JSON first
+        try {
+          const parsedData = JSON.parse(rawData);
+          console.log('[SW] Parsed JSON notification data:', parsedData);
+          
+          // Handle Firebase FCM format: { notification: {...}, data: {...} }
+          if (parsedData.notification) {
+            notificationData = {
+              title: parsedData.notification.title || 'Zuzzuu Notification',
+              message: parsedData.notification.body || 'You have a new notification',
+              url: parsedData.data?.url || parsedData.data?.click_action,
+              icon: parsedData.notification.icon || parsedData.data?.icon,
+              image: parsedData.notification.image || parsedData.data?.image,
+              image_url: parsedData.data?.image_url, // Also check for image_url in data
+              tag: parsedData.data?.tag || 'zuzzuu-notification',
+              ...parsedData.data // Include any additional data
+            };
+          } else {
+            // Handle custom Zuzzuu format
+            notificationData = parsedData;
+          }
+        } catch (jsonError) {
+          console.log('[SW] Not JSON, treating as text:', rawData);
           notificationData = {
-            title: parsedData.notification.title || 'Zuzzuu Notification',
-            message: parsedData.notification.body || 'You have a new notification',
-            url: parsedData.data?.url || parsedData.data?.click_action,
-            icon: parsedData.notification.icon || parsedData.data?.icon,
-            image: parsedData.notification.image || parsedData.data?.image,
-            tag: parsedData.data?.tag || 'zuzzuu-notification',
-            ...parsedData.data // Include any additional data
+            title: 'Zuzzuu Notification',
+            message: rawData || 'You have a new notification'
           };
-        } else {
-          // Handle custom Zuzzuu format
-          notificationData = parsedData;
         }
-      } catch (jsonError) {
-        console.log('[SW] Not JSON, treating as text:', rawData);
+      } catch (error) {
+        console.error('[SW] Error reading push notification data:', error);
         notificationData = {
           title: 'Zuzzuu Notification',
-          message: rawData || 'You have a new notification'
+          message: 'You have a new notification'
         };
       }
-    } catch (error) {
-      console.error('[SW] Error reading push notification data:', error);
+    } else {
+      console.log('[SW] Empty push data, using default notification');
+      notificationData = {
+        title: 'Zuzzuu Notification',
+        message: 'You have a new notification from Zuzzuu'
+      };
+    }
+
+    // Ensure we have required fields
+    if (!notificationData.title && !notificationData.message) {
       notificationData = {
         title: 'Zuzzuu Notification',
         message: 'You have a new notification'
       };
     }
-  } else {
-    console.log('[SW] Empty push data, using default notification');
-    notificationData = {
-      title: 'Zuzzuu Notification',
-      message: 'You have a new notification from Zuzzuu'
-    };
-  }
 
-  // Ensure we have required fields
-  if (!notificationData.title && !notificationData.message) {
-    notificationData = {
-      title: 'Zuzzuu Notification',
-      message: 'You have a new notification'
-    };
-  }
+    // Check if image field exists and add delay for fast data arrival
+    const hasImageField = notificationData.image_url !== undefined ||
+                          notificationData.image !== undefined ||
+                          (notificationData.template && (notificationData.template.image_url !== undefined || notificationData.template.image !== undefined)) ||
+                          (notificationData.data && (notificationData.data.image_url !== undefined || notificationData.data.image !== undefined));
+    
+    if (hasImageField) {
+      console.log('[SW] Push notification: Image field detected - adding delay to ensure image loading completes');
+      await new Promise(resolve => setTimeout(resolve, 500)); // 500ms delay for image loading
+      console.log('[SW] Push notification: Image loading delay completed');
+    }
 
-  console.log('[SW] Final push notification data to display:', notificationData);
+    console.log('[SW] Final push notification data to display:', notificationData);
 
-  // Always show browser notification - this is critical for browser-closed scenarios
-  const notificationPromise = showBrowserNotification(notificationData);
+    // Always show browser notification - this is critical for browser-closed scenarios
+    const notificationPromise = showBrowserNotification(notificationData);
 
-  // Check if any clients are available and forward if possible
-  const clientsPromise = checkAndNotifyClients(notificationData);
+    // Check if any clients are available and forward if possible
+    const clientsPromise = checkAndNotifyClients(notificationData);
 
-  // Wait for both operations to complete
-  event.waitUntil(
-    Promise.all([notificationPromise, clientsPromise])
+    // Wait for both operations to complete
+    return Promise.all([notificationPromise, clientsPromise])
       .then(() => {
         console.log('[SW] Push notification handling completed successfully');
       })
@@ -580,8 +677,11 @@ self.addEventListener('push', function(event) {
         console.error('[SW] Error in push notification handling:', error);
         // Even if there's an error, try to show a basic notification
         return showFallbackNotification();
-      })
-  );
+      });
+  }
+
+  // Wait for the async push notification handling with delay
+  event.waitUntil(handlePushNotificationWithDelay());
 });
 
 // Enhanced function to check clients and notify them
