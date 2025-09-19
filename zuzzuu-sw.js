@@ -85,9 +85,9 @@ self.addEventListener('message', function(event) {
       }
       break;
     case 'SIMULATE_WEBSOCKET_MESSAGE':
-      // Test simulation for WebSocket messages
-      console.log('[SW] Simulating WebSocket message:', data);
-      handleWebSocketMessage({ data: JSON.stringify(data) });
+      // Handle simulated WebSocket messages for testing
+      console.log('[SW] Simulating WebSocket message:', event.data.data);
+      handleWebSocketMessage({ data: JSON.stringify(event.data.data) });
       break;
     case 'SIMULATE_PUSH_MESSAGE':
       // Test simulation for Push messages
