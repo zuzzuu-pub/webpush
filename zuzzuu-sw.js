@@ -1,6 +1,7 @@
 /**
- * Zuzzuu Service Worker
+ * Zuzzuu Service Worker - Enhanced Version
  * Handles push notifications, WebSocket connections, and background sync
+ * Security improvements and better state management
  */
 
 let socket = null;
@@ -8,862 +9,580 @@ let isConnected = false;
 let subscriberId = null;
 let connectionInProgress = false;
 let lastConnectionAttempt = 0;
-const CONNECTION_COOLDOWN = 5000; // 5 seconds between connection attempts
+const CONNECTION_COOLDOWN = 5000;
+const MAX_RECONNECT_ATTEMPTS = 5;
+let reconnectAttempts = 0;
 
-// Service Worker event listeners
-self.addEventListener('install', function(event) {
+// Notification deduplication cache (stores notification IDs seen in last 60 seconds)
+const notificationCache = new Map();
+const CACHE_CLEANUP_INTERVAL = 60000; // 1 minute
+const NOTIFICATION_TTL = 60000; // 60 seconds
+
+// Security: Content Security Policy headers
+const CSP_HEADERS = {
+  'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; connect-src 'self' https://*.vibte.shop wss://*.vibte.shop https://*.cloudinary.com; img-src 'self' https: data:;"
+};
+
+// Service Worker lifecycle events
+self.addEventListener('install', (event) => {
   console.log('[SW] Installing service worker');
-  self.skipWaiting();
+  self.skipWaiting(); // Activate immediately
 });
 
-self.addEventListener('activate', function(event) {
+self.addEventListener('activate', (event) => {
   console.log('[SW] Activating service worker');
   event.waitUntil(
-    self.clients.claim().then(() => {
-      console.log('[SW] Service worker now controls all clients');
-    })
+    self.clients.claim()
+      .then(() => {
+        console.log('[SW] Service worker now controls all clients');
+        initializeServiceWorker();
+      })
   );
 });
 
-// Listen for messages from main thread
-self.addEventListener('message', function(event) {
+/**
+ * Initialize service worker
+ */
+function initializeServiceWorker() {
+  // Start notification cache cleanup
+  setInterval(cleanupNotificationCache, CACHE_CLEANUP_INTERVAL);
+
+  // Load persisted state
+  loadPersistedState();
+
+  console.log('[SW] Service worker initialized');
+}
+
+/**
+ * Clean up old notification cache entries
+ */
+function cleanupNotificationCache() {
+  const now = Date.now();
+  for (const [key, timestamp] of notificationCache.entries()) {
+    if (now - timestamp > NOTIFICATION_TTL) {
+      notificationCache.delete(key);
+    }
+  }
+}
+
+/**
+ * Load persisted state from IndexedDB or fallback storage
+ */
+async function loadPersistedState() {
+  try {
+    // Try to load subscriber ID from clients
+    const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    if (clients.length > 0) {
+      clients[0].postMessage({ type: 'REQUEST_SUBSCRIBER_ID' });
+    }
+  } catch (error) {
+    console.error('[SW] Error loading persisted state:', error);
+  }
+}
+
+/**
+ * Listen for messages from main thread
+ */
+self.addEventListener('message', (event) => {
   const { type, data } = event.data;
-  console.log('[SW] Received message:', type, data);
-  
+  console.log('[SW] Received message:', type);
+
   switch (type) {
     case 'CONNECT_SOCKETIO':
-      connectSocketIO(data.subscriberId, data.socketUrl);
+      handleConnectSocketIO(data);
       break;
     case 'DISCONNECT_SOCKETIO':
       disconnectSocketIO();
       break;
-    case 'CONNECT_WEBSOCKET':
-      connectWebSocket(data.subscriberId, data.wsUrl);
-      break;
-    case 'DISCONNECT_WEBSOCKET':
-      disconnectWebSocket();
-      break;
-    case 'UPDATE_SUBSCRIBER_STATUS':
-      updateSubscriberStatus(data.status);
-      break;
     case 'SET_SUBSCRIBER_ID':
-      subscriberId = data.subscriberId;
-      console.log('[SW] Subscriber ID set:', subscriberId);
-      broadcastToClients({
-        type: 'SUBSCRIBER_ID_SET',
-        data: { subscriberId: subscriberId }
-      });
-      break;
-    case 'SKIP_WAITING':
-      self.skipWaiting();
-      break;
-    case 'CLAIM_CLIENTS':
-      self.clients.claim().then(() => {
-        console.log('[SW] Service worker claimed all clients');
-        broadcastToClients({
-          type: 'SERVICE_WORKER_READY',
-          data: { ready: true }
-        });
-      });
-      break;
-    case 'GET_CONNECTION_STATUS':
-      if (event.ports && event.ports[0]) {
-        event.ports[0].postMessage({
-          type: 'CONNECTION_STATUS',
-          connected: isConnected,
-          subscriberId: subscriberId
-        });
-      }
+      setSubscriberId(data.subscriberId);
       break;
     case 'GET_STATUS':
-      if (event.ports && event.ports[0]) {
-        event.ports[0].postMessage({
-          type: 'STATUS_RESPONSE',
-          subscriberId: subscriberId,
-          connected: isConnected
-        });
-      }
+      respondWithStatus(event);
       break;
-    case 'SIMULATE_WEBSOCKET_MESSAGE':
-      // Test simulation for WebSocket messages
-      console.log('[SW] Simulating WebSocket message:', data);
-      handleWebSocketMessage({ data: JSON.stringify(data) });
+    case 'HEARTBEAT':
+      sendHeartbeat();
       break;
-    case 'SIMULATE_PUSH_MESSAGE':
-      // Test simulation for Push messages
-      console.log('[SW] Simulating Push message:', data);
-      showBrowserNotification(data);
-      break;
+    default:
+      console.log('[SW] Unknown message type:', type);
   }
 });
 
-// Socket.IO Connection Functions
-function connectSocketIO(subId, socketUrl) {
-  // For now, Socket.IO connection is handled by the main thread
-  // This is a placeholder for future Socket.IO service worker integration
-  console.log('[SW] Socket.IO connection requested (handled by main thread)');
-  subscriberId = subId;
-  
+/**
+ * Set subscriber ID with validation
+ */
+function setSubscriberId(id) {
+  if (!id || typeof id !== 'string') {
+    console.error('[SW] Invalid subscriber ID');
+    return;
+  }
+
+  subscriberId = id;
+  console.log('[SW] Subscriber ID set:', subscriberId.substring(0, 8) + '...');
+
   broadcastToClients({
-    type: 'SOCKETIO_CONNECTED',
+    type: 'SUBSCRIBER_ID_SET',
     data: { subscriberId: subscriberId }
   });
 }
 
-function disconnectSocketIO() {
-  console.log('[SW] Socket.IO disconnection requested');
-  isConnected = false;
-  
-  broadcastToClients({
-    type: 'SOCKETIO_DISCONNECTED'
-  });
+/**
+ * Respond with current status
+ */
+function respondWithStatus(event) {
+  if (event.ports && event.ports[0]) {
+    event.ports[0].postMessage({
+      type: 'STATUS_RESPONSE',
+      data: {
+        subscriberId: subscriberId,
+        connected: isConnected,
+        reconnectAttempts: reconnectAttempts
+      }
+    });
+  }
 }
 
-// WebSocket Connection Functions
-function connectWebSocket(subId, wsUrl) {
-  // Prevent duplicate connections
+/**
+ * Handle Socket.IO connection request
+ */
+function handleConnectSocketIO(data) {
   if (connectionInProgress) {
-    console.log('[SW] Connection already in progress, ignoring request');
+    console.log('[SW] Connection already in progress');
     return;
   }
-  
-  if (isConnected && subscriberId === subId) {
-    console.log('[SW] Already connected to same subscriber, ignoring request');
-    broadcastToClients({ type: 'WEBSOCKET_CONNECTED' });
+
+  if (isConnected && subscriberId === data.subscriberId) {
+    console.log('[SW] Already connected');
+    broadcastToClients({ type: 'SOCKETIO_CONNECTED' });
     return;
   }
-  
-  // Implement connection cooldown
+
+  // Connection cooldown
   const now = Date.now();
   if (now - lastConnectionAttempt < CONNECTION_COOLDOWN) {
-    console.log('[SW] Connection cooldown active, ignoring request');
+    console.log('[SW] Connection cooldown active');
     return;
   }
-  
+
   lastConnectionAttempt = now;
   connectionInProgress = true;
-  subscriberId = subId;
-  
-  // Close existing connection if different subscriber
-  if (socket && socket.readyState === WebSocket.OPEN && subscriberId !== subId) {
-    console.log('[SW] Closing existing connection for different subscriber');
-    socket.close();
-  }
-  
+  subscriberId = data.subscriberId;
+
+  connectWebSocket(data.subscriberId, data.socketUrl);
+}
+
+/**
+ * Connect to WebSocket with enhanced error handling
+ */
+function connectWebSocket(subId, wsUrl) {
   try {
-    const url = `${wsUrl}/${subscriberId}`;
+    const url = `${wsUrl}/${subId}`;
     console.log('[SW] Connecting to WebSocket:', url);
-    
+
     socket = new WebSocket(url);
-    
-    socket.onopen = function() {
+
+    socket.onopen = () => {
       console.log('[SW] WebSocket connected');
       isConnected = true;
       connectionInProgress = false;
-      
-      // Store connection state
-      broadcastToClients({ 
-        type: 'STORE_CONNECTION_STATE',
-        data: { connected: true, subscriberId: subscriberId }
-      });
-      
+      reconnectAttempts = 0;
+
       broadcastToClients({ type: 'WEBSOCKET_CONNECTED' });
     };
-    
-    socket.onmessage = function(event) {
-      console.log('[SW] WebSocket message:', event.data);
+
+    socket.onmessage = (event) => {
       handleWebSocketMessage(event);
     };
-    
-    socket.onclose = function(event) {
-      console.log('[SW] WebSocket disconnected:', event.code, event.reason);
+
+    socket.onclose = (event) => {
+      console.log('[SW] WebSocket closed:', event.code, event.reason);
       isConnected = false;
       connectionInProgress = false;
-      
-      // Update stored connection state
-      broadcastToClients({ 
-        type: 'STORE_CONNECTION_STATE',
-        data: { connected: false, subscriberId: null }
-      });
-      
+
       broadcastToClients({ type: 'WEBSOCKET_DISCONNECTED' });
-      
-      // Only attempt to reconnect for unexpected disconnections
-      if (event.code !== 1000 && event.code !== 1001) {
-        console.log('[SW] Unexpected disconnection, will attempt reconnect after delay');
+
+      // Attempt reconnection for unexpected disconnections
+      if (event.code !== 1000 && event.code !== 1001 && reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+        reconnectAttempts++;
+        const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
+        console.log(`[SW] Reconnecting in ${delay}ms (attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
+
         setTimeout(() => {
-          if (!isConnected && !connectionInProgress) {
-            connectWebSocket(subscriberId, wsUrl.replace(`/${subscriberId}`, ''));
+          if (!isConnected) {
+            connectWebSocket(subId, wsUrl.replace(`/${subId}`, ''));
           }
-        }, 10000); // 10 second delay for reconnection
+        }, delay);
       }
     };
-    
-    socket.onerror = function(error) {
+
+    socket.onerror = (error) => {
       console.error('[SW] WebSocket error:', error);
       isConnected = false;
       connectionInProgress = false;
-      broadcastToClients({ type: 'WEBSOCKET_ERROR', data: { error: error.message || 'WebSocket connection failed' } });
+      broadcastToClients({ type: 'WEBSOCKET_ERROR', data: { error: 'Connection failed' } });
     };
-    
+
   } catch (error) {
     console.error('[SW] Error creating WebSocket:', error);
     connectionInProgress = false;
-    broadcastToClients({ type: 'WEBSOCKET_ERROR', data: { error: error.message || 'Failed to create WebSocket' } });
+    broadcastToClients({ type: 'WEBSOCKET_ERROR', data: { error: error.message } });
   }
 }
 
-function disconnectWebSocket() {
+/**
+ * Disconnect Socket.IO
+ */
+function disconnectSocketIO() {
   connectionInProgress = false;
-  
+
   if (socket) {
     socket.close(1000, 'Service worker disconnect');
     socket = null;
   }
-  
+
   isConnected = false;
   subscriberId = null;
-  
-  // Clear stored connection state
-  broadcastToClients({ 
-    type: 'STORE_CONNECTION_STATE',
-    data: { connected: false, subscriberId: null }
-  });
+  reconnectAttempts = 0;
 }
 
-// Handle WebSocket messages and show real-time notifications
+/**
+ * Handle WebSocket messages
+ */
 function handleWebSocketMessage(event) {
   try {
     const data = JSON.parse(event.data);
-    console.log('[SW] WebSocket message received:', data);
+    console.log('[SW] WebSocket message:', data.type);
 
     if (data.type === 'notification') {
-      // Support both { type: 'notification', ...fields } and { type: 'notification', data: {...fields} }
-      const notificationData = data.data ? data.data : data;
+      const notificationData = data.data || data;
 
-      console.log('[SW] Processing WebSocket notification data:', notificationData);
+      // Check for duplicate
+      if (isDuplicateNotification(notificationData)) {
+        console.log('[SW] Duplicate notification ignored');
+        return;
+      }
 
-      // Forward notification to main thread
+      // Forward to clients
       broadcastToClients({
         type: 'NOTIFICATION_RECEIVED',
         data: notificationData
       });
 
-      // Show browser notification immediately for real-time notifications
-      showBrowserNotificationFromWebSocket(notificationData);
-      
+      // Show browser notification
+      showBrowserNotification(notificationData);
+
     } else if (data.type === 'connection_established') {
-      console.log('[SW] WebSocket connection established');
-      broadcastToClients({
-        type: 'WEBSOCKET_CONNECTED',
-        data: { subscriberId: subscriberId }
-      });
-    } else if (data.type === 'heartbeat_response') {
-      console.log('[SW] Heartbeat response received');
-    } else if (data.type === 'echo') {
-      console.log('[SW] Echo response received:', data);
+      console.log('[SW] Connection established');
+      broadcastToClients({ type: 'WEBSOCKET_CONNECTED' });
     }
   } catch (error) {
     console.error('[SW] Error handling WebSocket message:', error);
   }
 }
 
-// Show browser notification from WebSocket data
-async function showBrowserNotificationFromWebSocket(notificationData) {
-  try {
-    console.log('[SW] WebSocket notificationData:', JSON.stringify(notificationData, null, 2));
-    console.log('[SW] WebSocket notificationData keys:', Object.keys(notificationData));
+/**
+ * Check if notification is a duplicate
+ */
+function isDuplicateNotification(data) {
+  const notificationId = data.id || `${data.title}_${data.message}`;
+  const now = Date.now();
 
-    // Check for logo_url in nested template if main logo_url is null/empty
-    const logoUrl = notificationData.logo_url ||
-                   (notificationData.template && notificationData.template.logo_url) ||
-                   'https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg';
-    
-    // Enhanced image URL handling - check multiple possible fields like the custom notification does
-    console.log('[SW] Checking for image_url in these fields:');
-    console.log('[SW] - notificationData.image_url:', notificationData.image_url);
-    console.log('[SW] - notificationData.image:', notificationData.image);
-    console.log('[SW] - notificationData.template?.image_url:', notificationData.template && notificationData.template.image_url);
-    console.log('[SW] - notificationData.template?.image:', notificationData.template && notificationData.template.image);
-    console.log('[SW] - notificationData.data?.image_url:', notificationData.data && notificationData.data.image_url);
-    console.log('[SW] - notificationData.data?.image:', notificationData.data && notificationData.data.image);
-    
-    const imageUrl = notificationData.image_url ||
-                     notificationData.image ||
-                     (notificationData.template && notificationData.template.image_url) ||
-                     (notificationData.template && notificationData.template.image) ||
-                     (notificationData.data && notificationData.data.image_url) ||
-                     (notificationData.data && notificationData.data.image) ||
-                     undefined;
-
-    console.log('[SW] WebSocket imageUrl resolved to:', imageUrl);
-    console.log('[SW] WebSocket notification will include image:', imageUrl ? 'YES' : 'NO');
-    
-    // Validate and preload image if present
-    let validatedImageUrl = undefined;
-    if (imageUrl) {
-      console.log('[SW] Image URL validation:');
-      console.log('[SW] - Is valid URL format:', /^https?:\/\//.test(imageUrl));
-      console.log('[SW] - Is Cloudinary URL:', imageUrl.includes('cloudinary.com'));
-      console.log('[SW] - URL length:', imageUrl.length);
-      
-      // Preload and validate image
-      validatedImageUrl = await preloadAndValidateImage(imageUrl);
-      console.log('[SW] Image validation result:', validatedImageUrl ? 'SUCCESS' : 'FAILED');
+  if (notificationCache.has(notificationId)) {
+    const lastSeen = notificationCache.get(notificationId);
+    if (now - lastSeen < NOTIFICATION_TTL) {
+      return true;
     }
-
-    const title = notificationData.title || 'New Notification from Zuzzuu';
-    const options = {
-      body: notificationData.message || '',
-      icon: logoUrl,
-      badge: 'https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg',
-      image: validatedImageUrl, // Use validated image URL
-      tag: notificationData.id || 'zuzzuu-websocket-notification-' + Date.now(),
-      data: notificationData,
-      requireInteraction: false,
-      silent: false,
-      renotify: true,
-      vibrate: [200, 100, 200]
-    };
-    
-    console.log('[SW] Showing WebSocket notification:', title);
-    console.log('[SW] Final notification options:', JSON.stringify(options, null, 2));
-    
-    self.registration.showNotification(title, options)
-      .then(() => {
-        console.log('[SW] WebSocket notification displayed successfully');
-        if (validatedImageUrl) {
-          console.log('[SW] ✅ Notification displayed WITH image');
-        } else {
-          console.log('[SW] ⚠️ Notification displayed WITHOUT image');
-        }
-      })
-      .catch(error => {
-        console.error('[SW] Failed to show WebSocket notification:', error);
-        // Fallback: show notification without image
-        return showFallbackNotificationWithoutImage(title, notificationData);
-      });
-      
-  } catch (error) {
-    console.error('[SW] Error showing WebSocket notification:', error);
-    // Fallback: show basic notification
-    return showFallbackNotificationWithoutImage(
-      notificationData.title || 'New Notification from Zuzzuu',
-      notificationData
-    );
   }
+
+  notificationCache.set(notificationId, now);
+  return false;
 }
 
-// Preload and validate image for notification
-async function preloadAndValidateImage(imageUrl) {
-  try {
-    console.log('[SW] Preloading image:', imageUrl);
-    
-    // Basic URL validation
-    if (!imageUrl || typeof imageUrl !== 'string') {
-      console.log('[SW] Invalid image URL: not a string');
-      return null;
-    }
-    
-    if (!imageUrl.startsWith('http://') && !imageUrl.startsWith('https://')) {
-      console.log('[SW] Invalid image URL: not HTTP/HTTPS');
-      return null;
-    }
-    
-    // Try to fetch the image to validate it exists and is accessible
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
-    
-    try {
-      const response = await fetch(imageUrl, {
-        method: 'HEAD', // Only get headers, not the full image
-        signal: controller.signal,
-        mode: 'cors', // Allow CORS
-        cache: 'force-cache' // Use cache if available
-      });
-      
-      clearTimeout(timeoutId);
-      
-      if (!response.ok) {
-        console.log('[SW] Image fetch failed:', response.status, response.statusText);
-        return null;
-      }
-      
-      // Check if it's actually an image
-      const contentType = response.headers.get('content-type');
-      if (!contentType || !contentType.startsWith('image/')) {
-        console.log('[SW] URL is not an image, content-type:', contentType);
-        return null;
-      }
-      
-      console.log('[SW] ✅ Image validation successful');
-      return imageUrl;
-      
-    } catch (fetchError) {
-      clearTimeout(timeoutId);
-      console.log('[SW] Image fetch error:', fetchError.message);
-      
-      // If CORS fails, still try to use the image - browsers might handle it differently for notifications
-      if (fetchError.name === 'TypeError' || fetchError.message.includes('CORS')) {
-        console.log('[SW] CORS issue detected, but attempting to use image anyway');
-        return imageUrl; // Return original URL, let browser notification handle CORS
-      }
-      
-      return null;
-    }
-    
-  } catch (error) {
-    console.error('[SW] Image preload error:', error);
-    return null;
-  }
-}
-
-// Fallback notification without image
-function showFallbackNotificationWithoutImage(title, notificationData) {
-  console.log('[SW] Showing fallback notification without image');
-  
-  const options = {
-    body: notificationData.message || 'You have a new notification',
-    icon: notificationData.logo_url || 'https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg',
-    badge: 'https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg',
-    // No image property - fallback without image
-    tag: notificationData.id || 'zuzzuu-fallback-notification-' + Date.now(),
-    data: notificationData,
-    requireInteraction: false,
-    silent: false,
-    renotify: true,
-    vibrate: [200, 100, 200]
-  };
-  
-  return self.registration.showNotification(title, options)
-    .then(() => {
-      console.log('[SW] Fallback notification displayed successfully (without image)');
-    })
-    .catch(error => {
-      console.error('[SW] Even fallback notification failed:', error);
-    });
-}
-
-// Update subscriber status via WebSocket
-function updateSubscriberStatus(status) {
-  if (socket && socket.readyState === WebSocket.OPEN) {
-    console.log(`[SW] Updating subscriber status to: ${status}`);
-    socket.send(JSON.stringify({
-      type: 'status_update',
-      status: status,
-      timestamp: new Date().toISOString()
-    }));
-  }
-}
-
-// Enhanced broadcasting with better error handling
-function broadcastToClients(message) {
-  return self.clients.matchAll({ includeUncontrolled: true, type: 'window' })
-    .then(clients => {
-      console.log(`[SW] Broadcasting message to ${clients.length} clients:`, message.type);
-      
-      if (clients.length === 0) {
-        console.log('[SW] No clients to broadcast to - browser likely closed');
-        return Promise.resolve(false);
-      }
-
-      const promises = clients.map(client => {
-        return new Promise((resolve) => {
-          try {
-            // Sanitize the message before sending to avoid DataCloneError
-            const sanitizedMessage = sanitizeForPostMessage(message);
-            client.postMessage(sanitizedMessage);
-            console.log('[SW] Message sent to client successfully');
-            resolve(true);
-          } catch (error) {
-            console.error('[SW] Error sending message to client:', error);
-            // Try sending a minimal error message if the original fails
-            try {
-              client.postMessage({
-                type: 'BROADCAST_ERROR',
-                data: { error: 'Failed to send original message due to serialization error' }
-              });
-              resolve(false);
-            } catch (fallbackError) {
-              console.error('[SW] Even fallback message failed:', fallbackError);
-              resolve(false);
-            }
-          }
-        });
-      });
-
-      return Promise.all(promises);
-    })
-    .catch(error => {
-      console.error('[SW] Error getting clients for broadcast:', error);
-      return Promise.resolve(false);
-    });
-}
-
-// Handle push notifications - Enhanced for browser-closed scenarios (Firebase-style)
-self.addEventListener('push', function(event) {
-  console.log('[SW] Push notification received, event data:', event.data ? 'present' : 'empty');
+/**
+ * Handle push notifications (for browser-closed scenarios)
+ */
+self.addEventListener('push', (event) => {
+  console.log('[SW] Push notification received');
 
   let notificationData = {};
 
-  // Parse notification data with enhanced error handling (supports Firebase and custom formats)
   if (event.data) {
     try {
       const rawData = event.data.text();
-      console.log('[SW] Raw push data:', rawData);
-      
-      // Try to parse as JSON first
-      try {
-        const parsedData = JSON.parse(rawData);
-        console.log('[SW] Parsed JSON notification data:', parsedData);
-        
-        // Handle Firebase FCM format: { notification: {...}, data: {...} }
-        if (parsedData.notification) {
-          notificationData = {
-            title: parsedData.notification.title || 'Zuzzuu Notification',
-            message: parsedData.notification.body || 'You have a new notification',
-            url: parsedData.data?.url || parsedData.data?.click_action,
-            icon: parsedData.notification.icon || parsedData.data?.icon,
-            image: parsedData.notification.image || parsedData.data?.image,
-            tag: parsedData.data?.tag || 'zuzzuu-notification',
-            ...parsedData.data // Include any additional data
-          };
-        } else {
-          // Handle custom Zuzzuu format
-          notificationData = parsedData;
-        }
-      } catch (jsonError) {
-        console.log('[SW] Not JSON, treating as text:', rawData);
+      const parsedData = JSON.parse(rawData);
+
+      // Handle Firebase FCM format
+      if (parsedData.notification) {
         notificationData = {
-          title: 'Zuzzuu Notification',
-          message: rawData || 'You have a new notification'
+          title: parsedData.notification.title || 'Notification',
+          message: parsedData.notification.body || 'You have a new notification',
+          url: parsedData.data?.url || parsedData.data?.click_action,
+          icon: parsedData.notification.icon || parsedData.data?.icon,
+          image: parsedData.notification.image || parsedData.data?.image,
+          tag: parsedData.data?.tag || 'zuzzuu-notification',
+          ...parsedData.data
         };
+      } else {
+        notificationData = parsedData;
       }
     } catch (error) {
-      console.error('[SW] Error reading push notification data:', error);
+      console.error('[SW] Error parsing push data:', error);
       notificationData = {
-        title: 'Zuzzuu Notification',
+        title: 'Notification',
         message: 'You have a new notification'
       };
     }
   } else {
-    console.log('[SW] Empty push data, using default notification');
     notificationData = {
-      title: 'Zuzzuu Notification',
-      message: 'You have a new notification from Zuzzuu'
-    };
-  }
-
-  // Ensure we have required fields
-  if (!notificationData.title && !notificationData.message) {
-    notificationData = {
-      title: 'Zuzzuu Notification',
+      title: 'Notification',
       message: 'You have a new notification'
     };
   }
 
-  console.log('[SW] Final push notification data to display:', notificationData);
+  // Skip setup notifications
+  if (notificationData.source === 'setup' || notificationData.source === 'welcome') {
+    console.log('[SW] Skipping setup notification');
+    return;
+  }
 
-  // Always show browser notification - this is critical for browser-closed scenarios
+  // Check for duplicates
+  if (isDuplicateNotification(notificationData)) {
+    console.log('[SW] Duplicate push notification ignored');
+    return;
+  }
+
   const notificationPromise = showBrowserNotification(notificationData);
-
-  // Check if any clients are available and forward if possible
   const clientsPromise = checkAndNotifyClients(notificationData);
 
-  // Wait for both operations to complete
   event.waitUntil(
     Promise.all([notificationPromise, clientsPromise])
-      .then(() => {
-        console.log('[SW] Push notification handling completed successfully');
-      })
-      .catch(error => {
+      .catch((error) => {
         console.error('[SW] Error in push notification handling:', error);
-        // Even if there's an error, try to show a basic notification
         return showFallbackNotification();
       })
   );
 });
 
-// Enhanced function to check clients and notify them
+/**
+ * Check for open clients and notify them
+ */
 async function checkAndNotifyClients(notificationData) {
   try {
     const clients = await self.clients.matchAll({ includeUncontrolled: true, type: 'window' });
-    console.log(`[SW] Found ${clients.length} clients to notify`);
-    
+
     if (clients.length > 0) {
-      // Browser has open tabs, forward to main thread
+      const sanitizedData = sanitizeForPostMessage(notificationData);
       clients.forEach(client => {
         try {
           client.postMessage({
             type: 'PUSH_NOTIFICATION_RECEIVED',
-            data: sanitizeForPostMessage(notificationData)
+            data: sanitizedData
           });
-          console.log('[SW] Push notification forwarded to client');
         } catch (error) {
-          console.error('[SW] Error forwarding push notification to client:', error);
+          console.error('[SW] Error forwarding to client:', error);
         }
       });
       return true;
-    } else {
-      console.log('[SW] No clients available - browser likely closed, push notification will show via system');
-      return false;
     }
+
+    console.log('[SW] No clients available');
+    return false;
   } catch (error) {
     console.error('[SW] Error checking clients:', error);
     return false;
   }
 }
 
-// Fallback notification for critical errors
-function showFallbackNotification() {
-  console.log('[SW] Showing fallback notification');
-  return self.registration.showNotification('Zuzzuu', {
-    body: 'You have a new notification',
-    icon: 'https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg',
-    badge: 'https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg',
-    tag: 'zuzzuu-fallback-' + Date.now(),
-    requireInteraction: false,
-    silent: false
-  });
-}
-
-// Enhanced browser notification display with Firebase-style options (for push notifications)
+/**
+ * Show browser notification with security validation
+ */
 async function showBrowserNotification(notificationData) {
   try {
-    console.log('[SW] Push notificationData:', JSON.stringify(notificationData, null, 2));
-    
-    // Ensure we have a title
-    let title = notificationData.title || notificationData.name || 'Zuzzuu Notification';
-    
-    // Ensure we have a message
-    let body = notificationData.message || notificationData.body || notificationData.text || 'You have a new notification';
-    
-    // Truncate title and body if too long (browser limits)
-    if (title.length > 100) title = title.substring(0, 97) + '...';
-    if (body.length > 200) body = body.substring(0, 197) + '...';
-
-    // Enhanced image URL handling - check multiple possible fields like the custom notification does
-    const imageUrl = notificationData.image_url ||
-                     notificationData.image ||
-                     (notificationData.template && notificationData.template.image_url) ||
-                     (notificationData.template && notificationData.template.image) ||
-                     (notificationData.data && notificationData.data.image_url) ||
-                     (notificationData.data && notificationData.data.image) ||
-                     undefined;
-
-    console.log('[SW] Push imageUrl resolved to:', imageUrl);
-    console.log('[SW] Push notification will include image:', imageUrl ? 'YES' : 'NO');
-
-    // Validate and preload image if present
-    let validatedImageUrl = undefined;
-    if (imageUrl) {
-      validatedImageUrl = await preloadAndValidateImage(imageUrl);
-      console.log('[SW] Push image validation result:', validatedImageUrl ? 'SUCCESS' : 'FAILED');
-    }
+    // Validate and sanitize notification data
+    const sanitized = sanitizeNotificationData(notificationData);
 
     const options = {
-      body: body,
-      icon: notificationData.logo_url || notificationData.icon || 'https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg',
-      badge: notificationData.logo_url || notificationData.badge || 'https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg',
-      image: validatedImageUrl, // Use validated image URL
-      tag: notificationData.tag || notificationData.id ? `zuzzuu-push-${notificationData.id}` : `zuzzuu-notification-${Date.now()}`,
+      body: sanitized.message || 'You have a new notification',
+      icon: sanitized.icon || 'https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg',
+      badge: sanitized.badge || sanitized.icon || 'https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg',
+      tag: sanitized.tag || 'zuzzuu-' + Date.now(),
+      requireInteraction: false,
+      silent: false,
+      renotify: true,
       data: {
-        // Store essential data only to avoid serialization issues
-        id: notificationData.id,
-        url: notificationData.url || notificationData.action_url || notificationData.click_action,
+        url: sanitized.url || self.location.origin,
         timestamp: new Date().toISOString(),
-        original_data: notificationData,
-        source: 'push'
-      },
-      requireInteraction: true, // Firebase-style: notification persists until user interaction
-      silent: false, // Play notification sound
-      renotify: true, // Show even if a notification with same tag exists
-      vibrate: [200, 100, 200], // Vibration pattern for mobile
-      actions: [] // Will be populated below
+        id: sanitized.id
+      }
     };
 
-    // Add actions similar to Firebase (open/close pattern)
-    if (notificationData.url || notificationData.action_url || notificationData.click_action) {
-      options.actions = [
-        {
-          action: 'open',
-          title: 'Open',
-          icon: 'https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg'
-        },
-        {
-          action: 'close',
-          title: 'Close'
-        }
-      ];
-    } else {
-      // No URL provided, just add close action
-      options.actions = [
-        {
-          action: 'close',
-          title: 'Close'
-        }
-      ];
+    if (sanitized.image) {
+      options.image = sanitized.image;
     }
 
-    console.log('[SW] Showing enhanced push notification (Firebase-style):', title);
-    console.log('[SW] Push notification final options:', JSON.stringify(options, null, 2));
-    console.log('[SW] Push notification will display even when browser is closed');
-
-    return self.registration.showNotification(title, options)
-      .then(() => {
-        console.log('[SW] Push notification displayed successfully');
-        if (validatedImageUrl) {
-          console.log('[SW] ✅ Push notification displayed WITH image');
-        } else {
-          console.log('[SW] ⚠️ Push notification displayed WITHOUT image');
-        }
-        return true;
-      })
-      .catch(error => {
-        console.error('[SW] Failed to show push notification, trying fallback:', error);
-        // Try showing a fallback without image
-        return showFallbackNotificationWithoutImage(title, notificationData);
-      });
+    return await self.registration.showNotification(sanitized.title || 'Notification', options);
   } catch (error) {
-    console.error('[SW] Critical error showing push notification:', error);
-    // Last resort fallback
-    return showFallbackNotificationWithoutImage(title || 'Zuzzuu Notification', notificationData || {});
+    console.error('[SW] Error showing notification:', error);
+    return showFallbackNotification();
   }
 }
 
-// Sanitize data to ensure it's serializable for postMessage
-function sanitizeForPostMessage(obj) {
-  if (obj === null || obj === undefined) {
-    return obj;
-  }
-  
-  // Handle primitive types
-  if (typeof obj !== 'object') {
-    return typeof obj === 'function' ? '[Function]' : obj;
-  }
-  
-  // Handle arrays
-  if (Array.isArray(obj)) {
-    return obj.map(item => sanitizeForPostMessage(item));
-  }
-  
-  // Handle objects
+/**
+ * Sanitize notification data for security
+ */
+function sanitizeNotificationData(data) {
   const sanitized = {};
-  for (const key in obj) {
-    if (obj.hasOwnProperty(key)) {
-      const value = obj[key];
-      if (typeof value === 'function') {
-        sanitized[key] = '[Function]';
-      } else if (typeof value === 'object' && value !== null) {
-        // Avoid circular references and deep nesting
-        try {
-          sanitized[key] = sanitizeForPostMessage(value);
-        } catch (error) {
-          sanitized[key] = '[Object - could not serialize]';
-        }
-      } else {
-        sanitized[key] = value;
-      }
+
+  // Only allow specific fields
+  const allowedFields = ['title', 'message', 'body', 'icon', 'badge', 'image', 'url', 'tag', 'id'];
+
+  for (const field of allowedFields) {
+    if (data[field] && typeof data[field] === 'string') {
+      // Basic XSS prevention
+      sanitized[field] = data[field].replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
     }
   }
-  
+
+  // Validate URLs
+  if (sanitized.url && !isValidUrl(sanitized.url)) {
+    sanitized.url = self.location.origin;
+  }
+  if (sanitized.icon && !isValidUrl(sanitized.icon)) {
+    delete sanitized.icon;
+  }
+  if (sanitized.image && !isValidUrl(sanitized.image)) {
+    delete sanitized.image;
+  }
+
   return sanitized;
 }
 
-// Enhanced notification click handling (Firebase-style with proper action support)
-self.addEventListener('notificationclick', function(event) {
-  console.log('[SW] Notification clicked:', event.notification.tag, 'Action:', event.action);
-  console.log('[SW] Notification data:', event.notification.data);
-  
-  // Close the notification
-  event.notification.close();
-  
-  // Handle close action (like Firebase)
-  if (event.action === 'close') {
-    console.log('[SW] User chose to close notification');
-    return;
+/**
+ * Validate URL
+ */
+function isValidUrl(url) {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
   }
-  
-  const data = event.notification.data || {};
-  const originalData = data.original_data || data;
-  
-  // Determine the URL to open
-  let url = data.url || originalData.url || originalData.action_url || originalData.click_action || '/';
-  
-  // If no specific URL, open the main application
-  if (!url || url === '/') {
-    url = self.location.origin;
-  }
+}
 
-  console.log('[SW] Opening URL:', url);
+/**
+ * Show fallback notification
+ */
+function showFallbackNotification() {
+  return self.registration.showNotification('Zuzzuu', {
+    body: 'You have a new notification',
+    icon: 'https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg',
+    tag: 'zuzzuu-fallback-' + Date.now()
+  });
+}
+
+/**
+ * Handle notification click
+ */
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+
+  const url = event.notification.data?.url || self.location.origin;
 
   event.waitUntil(
-    // First, try to focus an existing window with the same URL (Firebase pattern)
     self.clients.matchAll({ type: 'window', includeUncontrolled: true })
-      .then(clients => {
-        // Look for an existing window with the target URL
-        for (let client of clients) {
+      .then((clientList) => {
+        // Check if there's already a window open
+        for (const client of clientList) {
           if (client.url === url && 'focus' in client) {
-            console.log('[SW] Focusing existing window');
             return client.focus();
           }
         }
-        
-        // If no existing window found, open a new one
-        console.log('[SW] Opening new window');
+        // Open new window
         if (self.clients.openWindow) {
           return self.clients.openWindow(url);
         }
-        return null;
-      })
-      .then(windowClient => {
-        if (windowClient) {
-          console.log('[SW] Window opened/focused successfully');
-          // Send a message to the opened window about the notification click
-          windowClient.postMessage({
-            type: 'NOTIFICATION_CLICKED',
-            data: sanitizeForPostMessage(originalData || data)
-          });
-        } else {
-          console.error('[SW] Failed to open/focus window');
-        }
-      })
-      .catch(error => {
-        console.error('[SW] Error handling notification click:', error);
       })
   );
 });
 
-// Handle notification close events (Firebase-style)
-self.addEventListener('notificationclose', function(event) {
+/**
+ * Handle notification close
+ */
+self.addEventListener('notificationclose', (event) => {
   console.log('[SW] Notification closed:', event.notification.tag);
-  console.log('[SW] Notification data:', event.notification.data);
-  
-  // Track notification close events (optional analytics)
-  const data = event.notification.data || {};
-  const originalData = data.original_data || data;
-  
-  // Broadcast to clients that notification was closed
+
   broadcastToClients({
     type: 'NOTIFICATION_CLOSED',
     data: {
       tag: event.notification.tag,
-      id: data.id,
-      timestamp: new Date().toISOString(),
-      source: data.source || 'unknown'
+      timestamp: new Date().toISOString()
     }
   });
-  
-  console.log('[SW] Notification close event processed');
 });
 
-// Handle background sync (for offline functionality)
-self.addEventListener('sync', function(event) {
-  console.log('[SW] Background sync triggered:', event.tag);
-  
+/**
+ * Send heartbeat
+ */
+function sendHeartbeat() {
+  if (socket && socket.readyState === WebSocket.OPEN) {
+    try {
+      socket.send(JSON.stringify({
+        type: 'heartbeat',
+        timestamp: new Date().toISOString()
+      }));
+    } catch (error) {
+      console.error('[SW] Error sending heartbeat:', error);
+    }
+  }
+}
+
+/**
+ * Broadcast to all clients
+ */
+function broadcastToClients(message) {
+  return self.clients.matchAll({ includeUncontrolled: true, type: 'window' })
+    .then(clients => {
+      if (clients.length === 0) {
+        return false;
+      }
+
+      clients.forEach(client => {
+        try {
+          client.postMessage(sanitizeForPostMessage(message));
+        } catch (error) {
+          console.error('[SW] Error sending to client:', error);
+        }
+      });
+
+      return true;
+    })
+    .catch(error => {
+      console.error('[SW] Error broadcasting:', error);
+      return false;
+    });
+}
+
+/**
+ * Sanitize message for postMessage
+ */
+function sanitizeForPostMessage(message) {
+  try {
+    return JSON.parse(JSON.stringify(message));
+  } catch (error) {
+    console.error('[SW] Error sanitizing message:', error);
+    return {
+      type: message.type || 'UNKNOWN',
+      data: { error: 'Serialization failed' }
+    };
+  }
+}
+
+/**
+ * Handle background sync
+ */
+self.addEventListener('sync', (event) => {
   if (event.tag === 'background-sync') {
     event.waitUntil(
-      // Perform background sync operations
       Promise.resolve().then(() => {
         console.log('[SW] Background sync completed');
         broadcastToClients({
