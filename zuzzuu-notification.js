@@ -10,9 +10,13 @@ class ZuzzuuNotification {
     // Default Zuzzuu logo URL from environment variable or fallback
     const defaultLogoUrl = 'https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg';
 
+    // Use production URL by default (vibte.shop)
+    const apiBaseUrl = options.apiUrl || "https://vibte.shop/api/v1";
+    const socketUrl = options.socketUrl || "https://vibte.shop";
+
     this.options = {
-      apiUrl: options.apiUrl || 'http://localhost:8002/api/v1',
-      socketUrl: options.socketUrl || 'http://localhost:8002', // Socket.IO URL
+      apiUrl: apiBaseUrl,
+      socketUrl: socketUrl,
       debug: options.debug || true,
       autoConnect: options.autoConnect !== false,
       heartbeatInterval: options.heartbeatInterval || 30000,
@@ -109,7 +113,7 @@ class ZuzzuuNotification {
         
         switch (type) {
           case 'NOTIFICATION_RECEIVED':
-            this.log('📧 Notification received from service worker:', data);
+            this.log('ðŸ“§ Notification received from service worker:', data);
             // Handle the notification data
             const notificationData = data.data || data;
             this.handleNotification(notificationData);
@@ -117,7 +121,7 @@ class ZuzzuuNotification {
           case 'SOCKETIO_CONNECTED':
             this.connected = true;
             this.isConnecting = false;
-            this.log('✅ Socket.IO connected via service worker');
+            this.log('âœ… Socket.IO connected via service worker');
             if (this.options.onConnectionChange) {
               this.options.onConnectionChange(true);
             }
@@ -125,7 +129,7 @@ class ZuzzuuNotification {
           case 'SOCKETIO_DISCONNECTED':
             this.connected = false;
             this.isConnecting = false;
-            this.log('❌ Socket.IO disconnected via service worker');
+            this.log('âŒ Socket.IO disconnected via service worker');
             if (this.options.onConnectionChange) {
               this.options.onConnectionChange(false);
             }
@@ -133,10 +137,22 @@ class ZuzzuuNotification {
           case 'SOCKETIO_ERROR':
             this.connected = false;
             this.isConnecting = false;
-            this.log('⚠️ Socket.IO error via service worker:', data);
+            this.log('âš ï¸ Socket.IO error via service worker:', data);
             if (this.options.onConnectionChange) {
               this.options.onConnectionChange(false);
             }
+            break;
+          case 'SHOW_SYSTEM_NOTIFICATION':
+            this.log('ðŸ“§ System notification requested from service worker:', data);
+            this.showBrowserNotification(data);
+            break;
+          case 'SHOW_WEBSOCKET_NOTIFICATION':
+            this.log('ðŸ“§ WebSocket notification requested from service worker:', data);
+            this.handleNotification(data);
+            break;
+          case 'SHOW_SITE_WIDE_NOTIFICATION':
+            this.log('ðŸ“§ Site-wide notification requested from service worker:', data);
+            this.showInAppNotification(data);
             break;
         }
       });
@@ -304,6 +320,63 @@ class ZuzzuuNotification {
       .zuzzuu-notification.closing {
         animation: zuzzuu-fade-out 0.3s ease-in forwards;
       }
+      
+      /* Connectivity notification styles */
+      .zuzzuu-connectivity-notification {
+        border-left: 4px solid #6366f1;
+      }
+      
+      .zuzzuu-connectivity-notification.zuzzuu-connectivity-online {
+        border-left-color: #10b981;
+        background-color: #f0fdf4;
+      }
+      
+      .zuzzuu-connectivity-notification.zuzzuu-connectivity-offline {
+        border-left-color: #ef4444;
+        background-color: #fef2f2;
+      }
+      
+      .zuzzuu-connectivity-notification .zuzzuu-notification-title {
+        color: #1f2937;
+        font-weight: 700;
+      }
+      
+      .zuzzuu-connectivity-notification.zuzzuu-connectivity-online .zuzzuu-notification-title {
+        color: #065f46;
+      }
+      
+      .zuzzuu-connectivity-notification.zuzzuu-connectivity-offline .zuzzuu-notification-title {
+        color: #991b1b;
+      }
+      
+      .zuzzuu-connectivity-notification .zuzzuu-notification-message {
+        color: #4b5563;
+      }
+      
+      .zuzzuu-connectivity-notification.zuzzuu-connectivity-online .zuzzuu-notification-message {
+        color: #047857;
+      }
+      
+      .zuzzuu-connectivity-notification.zuzzuu-connectivity-offline .zuzzuu-notification-message {
+        color: #dc2626;
+      }
+      
+      .zuzzuu-connectivity-icon {
+        border-radius: 50% !important;
+        font-size: 20px !important;
+        animation: connectivity-pulse 2s infinite;
+      }
+      
+      @keyframes connectivity-pulse {
+        0%, 100% {
+          transform: scale(1);
+          opacity: 1;
+        }
+        50% {
+          transform: scale(1.1);
+          opacity: 0.8;
+        }
+      }
     `;
     
     document.head.appendChild(styleElement);
@@ -326,7 +399,7 @@ class ZuzzuuNotification {
       this.log('Connection already in progress');
       return;
     }
-    
+
     // Check stored connection state
     const storedConnectionState = localStorage.getItem('zuzzuu_socketio_connection_state');
     if (storedConnectionState) {
@@ -341,17 +414,17 @@ class ZuzzuuNotification {
         this.log('Error parsing stored connection state:', e);
       }
     }
-    
+
     // Check if subscriber ID exists
     const currentSubscriberId = localStorage.getItem('zuzzuu_subscriber_id');
     if (!currentSubscriberId) {
       this.log('No subscriber ID found, cannot connect');
       return;
     }
-    
+
     this.subscriberId = currentSubscriberId;
     this.isConnecting = true;
-    
+
     if (this.useServiceWorker && navigator.serviceWorker.controller) {
       // Use service worker for Socket.IO connection
       navigator.serviceWorker.controller.postMessage({
@@ -361,7 +434,7 @@ class ZuzzuuNotification {
           socketUrl: this.options.socketUrl
         }
       });
-      
+
       // Set up timeout for connection attempt
       setTimeout(() => {
         if (this.isConnecting && !this.connected) {
@@ -371,31 +444,112 @@ class ZuzzuuNotification {
           // The service worker might still be establishing the connection
         }
       }, 15000); // Increased timeout to 15 seconds
-      
+
       return;
     }
-    
-    // Fallback to direct Socket.IO connection if service worker not available
+
+    // Direct Socket.IO connection if service worker not available
     this.log('Service worker not available, using direct Socket.IO connection');
-    // Note: Direct Socket.IO connection in main thread would need socket.io client library
+    this.connectDirectSocketIO();
   }
   
+  /**
+   * Connect directly to Socket.IO (fallback when service worker not available)
+   */
+  connectDirectSocketIO() {
+    try {
+      const socketUrl = this.options.socketUrl;
+      this.log('Connecting directly to Socket.IO:', socketUrl);
+
+      // Use Socket.IO if available
+      if (typeof io !== 'undefined') {
+        this.socket = io(socketUrl, {
+          query: {
+            subscriber_id: this.subscriberId,
+            client_type: 'direct_connection',
+            timestamp: Date.now()
+          },
+          transports: ['websocket', 'polling'],
+          timeout: 20000,
+          forceNew: true,
+          reconnection: true,
+          reconnectionDelay: 1000,
+          reconnectionAttempts: 5,
+          maxReconnectionAttempts: 5
+        });
+
+        // Socket.IO event handlers
+        this.socket.on('connect', () => {
+          this.connected = true;
+          this.isConnecting = false;
+          this.log('âœ… Connected to Socket.IO directly');
+          if (this.options.onConnectionChange) {
+            this.options.onConnectionChange(true);
+          }
+        });
+
+        this.socket.on('disconnect', (reason) => {
+          this.connected = false;
+          this.isConnecting = false;
+          this.log('âŒ Disconnected from Socket.IO:', reason);
+          if (this.options.onConnectionChange) {
+            this.options.onConnectionChange(false);
+          }
+        });
+
+        this.socket.on('connect_error', (error) => {
+          this.connected = false;
+          this.isConnecting = false;
+          this.log('âš ï¸ Socket.IO connection error:', error.message);
+          if (this.options.onConnectionChange) {
+            this.options.onConnectionChange(false);
+          }
+        });
+
+        this.socket.on('notification', (data) => {
+          this.log('ðŸ“§ Notification received via direct Socket.IO:', data);
+          this.handleNotification(data);
+        });
+
+        // Set connection timeout
+        setTimeout(() => {
+          if (this.isConnecting && !this.connected) {
+            this.log('â±ï¸ Direct Socket.IO connection timeout');
+            this.isConnecting = false;
+          }
+        }, 20000);
+      } else {
+        this.log('âŒ Socket.IO library not available for direct connection');
+        this.isConnecting = false;
+      }
+    } catch (error) {
+      this.log('âŒ Direct Socket.IO connection failed:', error);
+      this.isConnecting = false;
+    }
+  }
+
   /**
    * Disconnect from Socket.IO (updated to work with service worker)
    */
   disconnect() {
     this.isConnecting = false;
     this.connectionAttempted = false;
-    
+
     if (this.useServiceWorker && navigator.serviceWorker.controller) {
       navigator.serviceWorker.controller.postMessage({
         type: 'DISCONNECT_SOCKETIO'
       });
       return;
     }
-    
+
+    // Disconnect direct Socket.IO connection
+    if (this.socket) {
+      this.socket.disconnect();
+      this.socket = null;
+    }
+
     this.connected = false;
-    
+
     if (this.options.onConnectionChange) {
       this.options.onConnectionChange(false);
     }
@@ -406,14 +560,13 @@ class ZuzzuuNotification {
    */
   startHeartbeat() {
     this.stopHeartbeat();
-    
+
     this.heartbeatTimer = setInterval(() => {
-      if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+      if (this.socket && this.connected) {
         this.log('Sending heartbeat');
-        this.socket.send(JSON.stringify({
-          type: 'heartbeat',
+        this.socket.emit('heartbeat', {
           timestamp: new Date().toISOString()
-        }));
+        });
       }
     }, this.options.heartbeatInterval);
   }
@@ -458,6 +611,14 @@ class ZuzzuuNotification {
       this.isOnline = true;
       this.log('Browser is online');
       
+      // Show online notification
+      this.showConnectivityNotification({
+        title: 'Connection Restored',
+        message: 'Your internet connection has been restored. You will now receive notifications again.',
+        type: 'online',
+        icon: 'ðŸŒ'
+      });
+      
       if (!this.connected) {
         this.connect();
       }
@@ -466,6 +627,14 @@ class ZuzzuuNotification {
     window.addEventListener('offline', () => {
       this.isOnline = false;
       this.log('Browser is offline');
+      
+      // Show offline notification
+      this.showConnectivityNotification({
+        title: 'Connection Lost',
+        message: 'No internet connection detected. You may not receive new notifications until connection is restored.',
+        type: 'offline',
+        icon: 'ðŸ“¡'
+      });
       
       if (this.connected) {
         this.sendStatusUpdate('offline');
@@ -494,48 +663,75 @@ class ZuzzuuNotification {
    * Send status update
    */
   sendStatusUpdate(status) {
-    if (this.connected && this.socket && this.socket.readyState === WebSocket.OPEN) {
+    if (this.connected && this.socket) {
       this.log(`Sending status update: ${status}`);
-      this.socket.send(JSON.stringify({
-        type: 'status_update',
+      this.socket.emit('status_update', {
         status: status,
         timestamp: new Date().toISOString()
-      }));
+      });
     }
   }
   
-  /**
-   * Handle notification from server (public method)
-   */
-  handleNotification(data) {
-    // Always extract notification object - handle both direct data and wrapped data
-    const notificationData = data.data || data.notification || data;
+/**
+ * Handle notification from server (public method)
+ */
+handleNotification(data) {
+  // Always extract notification object - handle both direct data and wrapped data
+  const notificationData = data.data || data.notification || data;
 
-    console.log('ZuzzuuNotification: Handling notification:', notificationData);
+  console.log('ZuzzuuNotification: Handling notification:', notificationData);
 
-    // Ensure we have valid notification data
-    if (!notificationData) {
-      console.error('ZuzzuuNotification: No notification data provided');
-      return;
-    }
+  // Ensure we have valid notification data
+  if (!notificationData) {
+    console.error('ZuzzuuNotification: No notification data provided');
+    return;
+  }
 
-    // Validate required fields
-    if (!notificationData.title && !notificationData.message) {
-      console.error('ZuzzuuNotification: Notification must have title or message');
-      return;
-    }
+  // Validate required fields
+  if (!notificationData.title && !notificationData.message) {
+    console.error('ZuzzuuNotification: Notification must have title or message');
+    return;
+  }
 
-    // Ensure notification container exists
-    if (!this.notificationContainer) {
-      this.log('Notification container not found, creating it');
-      this.createNotificationContainer();
-    }
+  // Ensure notification container exists
+  if (!this.notificationContainer) {
+    this.log('Notification container not found, creating it');
+    this.createNotificationContainer();
+  }
 
-    // Only show in-app notification
+  // Enhanced duplicate prevention with better ID checking
+  const notificationId = notificationData.id || `${notificationData.title}_${notificationData.message}`.substring(0, 50);
+  const existingNotification = this.notifications.find(n => {
+    const existingId = n.data.id || `${n.data.title}_${n.data.message}`.substring(0, 50);
+    return existingId === notificationId && 
+           (Date.now() - (n.timestamp || 0)) < 5000; // Only check duplicates within 5 seconds
+  });
+
+  if (existingNotification) {
+    this.log('Duplicate notification detected, skipping:', notificationId);
+    return;
+  }
+
+  // Store timestamp for duplicate checking
+  notificationData._timestamp = Date.now();
+
+  // Only show notifications if there's actual content from API or Socket.IO
+  // Skip welcome/setup notifications that appear on every refresh
+  if (notificationData.source !== 'welcome-setup' &&
+      notificationData.source !== 'auto-setup' &&
+      notificationData.source !== 'service-worker-setup') {
+
+    // Show in-app notification with enhanced image support
     this.showInAppNotification(notificationData);
 
-    this.log('Notification handling completed for:', notificationData.id || 'unknown');
+    // Show browser notification with improved image handling
+    this.showBrowserNotification(notificationData);
+
+    this.log('Notification handling completed for:', notificationId);
+  } else {
+    this.log('Skipping welcome/setup notification:', notificationId);
   }
+}
   
   /**
    * Show in-app notification
@@ -552,9 +748,10 @@ class ZuzzuuNotification {
     // Create notification element
     const notificationElement = document.createElement('div');
     notificationElement.className = 'zuzzuu-notification';
-    notificationElement.dataset.id = data.id || Date.now();
+    const notificationId = data.id || Date.now();
+    notificationElement.dataset.id = notificationId;
     
-    this.log('Created notification element with ID:', notificationElement.dataset.id);
+    this.log('Created notification element with ID:', notificationId);
     
     // Create close button
     const closeButton = document.createElement('div');
@@ -566,8 +763,8 @@ class ZuzzuuNotification {
     });
     notificationElement.appendChild(closeButton);
     
-    // Add image container if image is provided
-    const imageUrl = data.image_url || '';
+    // Add image container with better error handling
+    const imageUrl = this.resolveImageUrl(data);
     if (imageUrl) {
       const imageContainer = document.createElement('div');
       imageContainer.className = 'zuzzuu-notification-image-container';
@@ -576,9 +773,19 @@ class ZuzzuuNotification {
       image.className = 'zuzzuu-notification-image';
       image.src = imageUrl;
       image.alt = data.title || 'Notification Image';
+      
+      // Enhanced image error handling
       image.onerror = () => {
-        // Show fallback image if image fails to load
-        image.src = 'https://placehold.co/380x140?text=No+Image';
+        this.log('Image failed to load:', imageUrl);
+        // Remove the image container if image fails
+        if (imageContainer.parentNode) {
+          imageContainer.parentNode.removeChild(imageContainer);
+        }
+      };
+      
+      // Image load success
+      image.onload = () => {
+        this.log('Image loaded successfully:', imageUrl);
       };
 
       imageContainer.appendChild(image);
@@ -671,17 +878,18 @@ class ZuzzuuNotification {
     // Add to container
     this.notificationContainer.appendChild(notificationElement);
     
-    // Store notification
+    // Store notification with timestamp for duplicate checking
     this.notifications.push({
-      id: notificationElement.dataset.id,
+      id: notificationId,
       element: notificationElement,
-      data: data
+      data: data,
+      timestamp: Date.now()
     });
     
     this.log('In-app notification added to DOM. Container children count:', this.notificationContainer.children.length);
     
-    // Force a reflow to ensure the element is rendered
-    notificationElement.offsetHeight;
+    // Clean up old notifications periodically
+    this.cleanupOldNotifications();
     
     // Auto-close after 8 seconds
     setTimeout(() => {
@@ -691,6 +899,19 @@ class ZuzzuuNotification {
     }, 8000);
   }
   
+  /**
+   * Resolve image URL from various possible locations
+   */
+  resolveImageUrl(data) {
+    return data.image_url ||
+           data.image ||
+           (data.template && data.template.image_url) ||
+           (data.template && data.template.image) ||
+           (data.data && data.data.image_url) ||
+           (data.data && data.data.image) ||
+           null;
+  }
+
   /**
    * Close notification
    */
@@ -706,13 +927,173 @@ class ZuzzuuNotification {
       this.notifications = this.notifications.filter(n => n.element !== element);
     }, 300);
   }
+
+  /**
+   * Show browser notification (like the test button does)
+   */
+  showBrowserNotification(data) {
+    // Check if notifications are supported and permission is granted
+    if (!('Notification' in window) || Notification.permission !== 'granted') {
+      this.log('Browser notifications not supported or permission not granted');
+      return;
+    }
+
+    try {
+      const title = data.title || 'New Notification';
+      
+      // Enhanced image URL resolution
+      const imageUrl = this.resolveImageUrl(data);
+      
+      const options = {
+        body: data.message || 'You have a new notification',
+        icon: data.logo_url || this.options.logoUrl,
+        badge: data.logo_url || this.options.logoUrl,
+        image: imageUrl, // Use resolved image URL
+        tag: data.id || "browser-notification-" + Date.now(),
+        data: {
+          url: data.url || window.location.href,
+          timestamp: data.timestamp || new Date().toISOString(),
+          id: data.id
+        },
+        requireInteraction: false,
+        silent: false,
+        vibrate: [200, 100, 200]
+      };
+
+      // Show the browser notification directly using Notification API
+      const notification = new Notification(title, options);
+
+      // Handle click on browser notification
+      notification.onclick = function(event) {
+        event.preventDefault();
+        const url = event.target.data?.url || window.location.href;
+        window.focus();
+        if (url && url !== window.location.href) {
+          window.open(url, '_blank');
+        }
+      };
+
+      this.log('Browser notification shown for:', options.tag);
+    } catch (error) {
+      this.log('Error showing browser notification:', error);
+    }
+  }
+
+  /**
+   * Show connectivity notification (special styling for network status)
+   */
+  showConnectivityNotification(options) {
+    const { title, message, type, icon, image_url } = options;
+
+    this.log(`Showing connectivity notification (${type}):`, { title, message });
+
+    // Create notification data for connectivity alert
+    const notificationData = {
+      id: `connectivity-${type}-${Date.now()}`,
+      title: title,
+      message: message,
+      logo_url: this.options.logoUrl,
+      image_url: image_url || null, // Add image URL support
+      connectivity_type: type, // Special flag for connectivity notifications
+      icon: icon || 'ðŸ“¡'
+    };
+
+    // Ensure notification container exists and is attached to DOM
+    if (!this.notificationContainer || !this.notificationContainer.parentNode) {
+      this.log('Notification container missing, recreating');
+      this.createNotificationContainer();
+    }
+    
+    // Create notification element
+    const notificationElement = document.createElement('div');
+    notificationElement.className = `zuzzuu-notification zuzzuu-connectivity-notification zuzzuu-connectivity-${type}`;
+    notificationElement.dataset.id = notificationData.id;
+    
+    this.log('Created connectivity notification element with ID:', notificationElement.dataset.id);
+    
+    // Create close button
+    const closeButton = document.createElement('div');
+    closeButton.className = 'zuzzuu-notification-close';
+    closeButton.innerHTML = '&times;';
+    closeButton.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.closeNotification(notificationElement);
+    });
+    notificationElement.appendChild(closeButton);
+    
+    // Create notification preview container (no image for connectivity notifications)
+    const previewContainer = document.createElement('div');
+    previewContainer.className = 'zuzzuu-notification-preview';
+    
+    // Create icon container with the provided icon
+    const iconContainer = document.createElement('div');
+    iconContainer.className = 'zuzzuu-notification-icon zuzzuu-connectivity-icon';
+    iconContainer.textContent = icon || 'ðŸ“¡';
+    iconContainer.style.fontSize = '20px';
+    iconContainer.style.backgroundColor = type === 'online' ? '#10b981' : '#ef4444';
+    iconContainer.style.color = 'white';
+    iconContainer.style.display = 'flex';
+    iconContainer.style.alignItems = 'center';
+    iconContainer.style.justifyContent = 'center';
+    previewContainer.appendChild(iconContainer);
+    
+    // Create content container
+    const contentContainer = document.createElement('div');
+    contentContainer.className = 'zuzzuu-notification-content';
+    
+    // Create title
+    const titleElement = document.createElement('div');
+    titleElement.className = 'zuzzuu-notification-title';
+    titleElement.textContent = title;
+    titleElement.title = title; // Add tooltip
+    contentContainer.appendChild(titleElement);
+    
+    // Create message
+    const messageElement = document.createElement('div');
+    messageElement.className = 'zuzzuu-notification-message';
+    messageElement.textContent = message;
+    messageElement.title = message; // Add tooltip
+    contentContainer.appendChild(messageElement);
+    
+    previewContainer.appendChild(contentContainer);
+    notificationElement.appendChild(previewContainer);
+    
+    // Add click event (just close the notification for connectivity alerts)
+    notificationElement.addEventListener('click', () => {
+      this.log('Connectivity notification clicked:', notificationData);
+      this.closeNotification(notificationElement);
+    });
+    
+    // Add to container
+    this.notificationContainer.appendChild(notificationElement);
+    
+    // Store notification
+    this.notifications.push({
+      id: notificationElement.dataset.id,
+      element: notificationElement,
+      data: notificationData
+    });
+    
+    this.log('Connectivity notification added to DOM. Container children count:', this.notificationContainer.children.length);
+    
+    // Force a reflow to ensure the element is rendered
+    notificationElement.offsetHeight;
+    
+    // Auto-close after longer time for connectivity notifications (10 seconds)
+    setTimeout(() => {
+      if (notificationElement.parentNode) {
+        this.closeNotification(notificationElement);
+      }
+    }, 10000);
+  }
   
   /**
    * Fetch and display a notification by ID
    */
   async fetchNotification(notificationId) {
     try {
-      const response = await fetch(`${this.options.apiUrl}/notification/${notificationId}/send`, {
+      const apiBaseUrl = this.options.apiUrl || "https://vibte.shop/api/v1";
+      const response = await fetch(`${apiBaseUrl}/notification/${notificationId}/send`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -721,9 +1102,9 @@ class ZuzzuuNotification {
           subscriber_id: this.subscriberId
         })
       });
-      
+
       const result = await response.json();
-      
+
       if (result.success && result.data) {
         this.handleNotification(result.data);
         return result.data;
@@ -799,26 +1180,33 @@ class ZuzzuuNotification {
     try {
       const registration = await navigator.serviceWorker.ready;
 
-      // Use VAPID key if provided, otherwise use applicationServerKey
-      const subscribeOptions = {
-        userVisibleOnly: true,
-        applicationServerKey: this.urlBase64ToUint8Array(this.options.vapidPublicKey || 'BDefaultVAPIDKeyForTestingPurposes1234567890')
-      };
+      // Use VAPID key if provided, otherwise skip push notifications
+      if (this.options.vapidPublicKey) {
+        const subscribeOptions = {
+          userVisibleOnly: true,
+          applicationServerKey: this.urlBase64ToUint8Array(this.options.vapidPublicKey)
+        };
 
-      const subscription = await registration.pushManager.subscribe(subscribeOptions);
-      this.pushSubscription = subscription;
+        const subscription = await registration.pushManager.subscribe(subscribeOptions);
+        this.pushSubscription = subscription;
 
-      this.log('Push subscription created:', subscription);
+        this.log('Push subscription created:', subscription);
 
-      // Send subscription to server
-      await this.sendPushSubscriptionToServer(subscription);
+        // Send subscription to server
+        await this.sendPushSubscriptionToServer(subscription);
 
-      // Store subscription locally
-      localStorage.setItem('zuzzuu_push_subscription', JSON.stringify(subscription));
+        // Store subscription locally
+        localStorage.setItem('zuzzuu_push_subscription', JSON.stringify(subscription));
+      } else {
+        this.log('No VAPID key provided, skipping push notification setup');
+        // Still mark as successful since the notification system works without push
+        this.pushSubscription = null;
+      }
 
     } catch (error) {
       this.log('Error subscribing to push notifications:', error);
-      throw error;
+      // Don't throw error - push notifications are optional
+      this.pushSubscription = null;
     }
   }
 
@@ -832,6 +1220,7 @@ class ZuzzuuNotification {
     }
 
     try {
+      const apiBaseUrl = this.options.apiUrl || "https://vibte.shop/api/v1";
       const subscriptionData = {
         subscriber_id: this.subscriberId,
         endpoint: subscription.endpoint,
@@ -843,7 +1232,7 @@ class ZuzzuuNotification {
         browser_info: this.getBrowserInfo()
       };
 
-      const response = await fetch(`${this.options.apiUrl}/push/subscribe`, {
+      const response = await fetch(`${apiBaseUrl}/push/subscribe`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -893,7 +1282,8 @@ class ZuzzuuNotification {
     if (!this.subscriberId) return;
 
     try {
-      await fetch(`${this.options.apiUrl}/push/unsubscribe`, {
+      const apiBaseUrl = this.options.apiUrl || "https://vibte.shop/api/v1";
+      await fetch(`${apiBaseUrl}/push/unsubscribe`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -960,6 +1350,124 @@ class ZuzzuuNotification {
   }
 
   /**
+   * Fetch notification data from the API
+   */
+  async fetchNotificationData(since = null) {
+    if (!this.subscriberId) {
+      throw new Error('No subscriber ID available. Please ensure user is subscribed to notifications.');
+    }
+
+    try {
+      // Use production URL by default
+      const apiBaseUrl = this.options.apiUrl || "https://vibte.shop/api/v1";
+      const apiUrl = `${apiBaseUrl}/public/notifications/check`;
+
+      this.log('Fetching notifications from:', apiUrl);
+
+      // Format the since parameter exactly as shown in the curl command
+      const sinceParam = since || new Date().toISOString();
+
+      const myHeaders = new Headers();
+      myHeaders.append("Content-Type", "application/json");
+
+      const raw = JSON.stringify({
+        "subscriber_id": this.subscriberId,
+        "since": sinceParam
+      });
+
+      const requestOptions = {
+        method: "POST",
+        headers: myHeaders,
+        body: raw,
+        redirect: "follow"
+      };
+
+      const response = await fetch(apiUrl, requestOptions);
+
+      if (!response.ok) {
+        throw new Error(`API request failed with status ${response.status}`);
+      }
+
+      const result = await response.json();
+      this.log('API response received:', result);
+
+      return result;
+    } catch (error) {
+      this.log('Error fetching notification data:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Display notifications using the existing Zuzzuu notification system
+   */
+  async displayNotifications(since = null) {
+    try {
+      const result = await this.fetchNotificationData(since);
+
+      if (result.success && result.data && result.data.length > 0) {
+        this.log(`Displaying ${result.data.length} notifications`);
+
+        // Use existing Zuzzuu notification system
+        result.data.forEach(notification => {
+          this.handleNotification(notification);
+        });
+
+        return result.data;
+      } else {
+        this.log('No new notifications to display');
+        return [];
+      }
+    } catch (error) {
+      this.log('Error displaying notifications:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get subscriber ID
+   */
+  getSubscriberId() {
+    return this.subscriberId;
+  }
+
+  /**
+   * Set subscriber ID
+   */
+  setSubscriberId(subscriberId) {
+    this.subscriberId = subscriberId;
+    localStorage.setItem('zuzzuu_subscriber_id', subscriberId);
+  }
+
+  /**
+   * Check if notifications are supported
+   */
+  static isSupported() {
+    return 'Notification' in window;
+  }
+
+  /**
+   * Request notification permission
+   */
+  static async requestPermission() {
+    if (!ZuzzuuNotification.isSupported()) {
+      throw new Error('Notifications are not supported in this browser');
+    }
+
+    if (Notification.permission === 'granted') {
+      return true;
+    }
+
+    if (Notification.permission === 'denied') {
+      throw new Error('Notification permission has been denied');
+    }
+
+    const permission = await Notification.requestPermission();
+    return permission === 'granted';
+  }
+
+
+  /**
    * Log debug messages
    */
   log(...args) {
@@ -967,12 +1475,81 @@ class ZuzzuuNotification {
       console.log('[ZuzzuuNotification]', ...args);
     }
   }
+
+  /**
+   * Test notification system - shows a test notification
+   */
+  testNotification() {
+    console.log('[ZuzzuuNotification] Testing notification system...');
+
+    const testData = {
+      title: "Test Notification",
+      message: "This is a test notification to verify the system is working correctly.",
+      icon: "https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg",
+      tag: "zuzzuu-test-" + Date.now(),
+      url: window.location.href,
+      data: {
+        source: "test",
+        timestamp: new Date().toISOString()
+      }
+    };
+
+    // Show both in-app and browser notifications
+    this.showInAppNotification(testData);
+    this.showBrowserNotification(testData);
+
+    console.log('[ZuzzuuNotification] Test notification sent');
+    return testData;
+  }
+
+  /**
+   * Show system notification with enhanced error handling
+   */
+  showSystemNotification(data) {
+    console.log('[ZuzzuuNotification] Showing system notification:', data);
+
+    // Only show if there's actual notification data, not just welcome messages
+    if (!data || (!data.title && !data.message && !data.body)) {
+      console.log('[ZuzzuuNotification] No notification data to display');
+      return;
+    }
+
+    // Skip welcome/setup notifications that appear on every refresh
+    if (data.source === 'welcome-setup' || data.source === 'auto-setup') {
+      console.log('[ZuzzuuNotification] Skipping welcome/setup notification');
+      return;
+    }
+
+    // Ensure we have permission first
+    if ("Notification" in window && Notification.permission === "default") {
+      console.log('[ZuzzuuNotification] Requesting permission for system notification...');
+      Notification.requestPermission().then(permission => {
+        if (permission === "granted") {
+          this.showBrowserNotification(data);
+        } else {
+          console.log('[ZuzzuuNotification] Permission denied for system notifications');
+        }
+      });
+    } else if (Notification.permission === "granted") {
+      this.showBrowserNotification(data);
+    } else {
+      console.log('[ZuzzuuNotification] Cannot show system notification - permission not granted');
+    }
+  }
+
+  /**
+   * Reset welcome notification flag (for testing)
+   */
+  resetWelcomeNotification() {
+    localStorage.removeItem('zuzzuu_welcome_notification_shown');
+    console.log('[ZuzzuuNotification] Welcome notification flag reset');
+  }
 }
 
 // Initialize when DOM is loaded
 if (typeof window !== 'undefined') {
   window.ZuzzuuNotification = ZuzzuuNotification;
-  
+
   document.addEventListener('DOMContentLoaded', () => {
     // Auto-initialize if data-zuzzuu-notification attribute is present
     const elements = document.querySelectorAll('[data-zuzzuu-notification]');
@@ -981,16 +1558,651 @@ if (typeof window !== 'undefined') {
         debug: el.dataset.debug === 'true',
         autoConnect: el.dataset.autoConnect !== 'false'
       };
-      
+
       if (el.dataset.apiUrl) options.apiUrl = el.dataset.apiUrl;
       if (el.dataset.socketUrl) options.socketUrl = el.dataset.socketUrl;
-      
+
       window.zuzzuuNotification = new ZuzzuuNotification(options);
     });
+
+    // Auto-initialize notification system with permission handling
+    if (!window.zuzzuuNotification) {
+      window.zuzzuuNotification = new ZuzzuuNotification({
+        debug: true,
+        autoConnect: false,
+        socketUrl: 'https://vibte.shop',
+        apiUrl: 'https://vibte.shop/api/v1',
+        vapidPublicKey: null,
+      });
+    }
+
+    // Enhanced notification permission and welcome notification system
+    if ("Notification" in window) {
+      console.log("[Auto-Notification] Current permission status:", Notification.permission);
+
+      if (Notification.permission === "default") {
+        console.log("[Auto-Notification] Requesting notification permission...");
+        Notification.requestPermission().then(function (permission) {
+          console.log("[Auto-Notification] Notification permission result:", permission);
+          if (permission === "granted") {
+            // Only show welcome notification if not shown before
+            const welcomeShown = localStorage.getItem('zuzzuu_welcome_notification_shown');
+            if (!welcomeShown) {
+              setTimeout(() => {
+                showWelcomeNotification();
+                localStorage.setItem('zuzzuu_welcome_notification_shown', 'true');
+              }, 1000);
+            }
+          }
+        });
+      } else if (Notification.permission === "granted") {
+        // Only show welcome notification if not shown before and system is ready
+        const welcomeShown = localStorage.getItem('zuzzuu_welcome_notification_shown');
+        if (!welcomeShown) {
+          setTimeout(() => {
+            showWelcomeNotification();
+            localStorage.setItem('zuzzuu_welcome_notification_shown', 'true');
+          }, 2000);
+        }
+      }
+    }
+
+    // Enhanced welcome notification function
+    function showWelcomeNotification() {
+      console.log("[Auto-Notification] Showing welcome notification...");
+
+      const welcomeData = {
+        title: "Zuzzuu Notifications Active",
+        message: "Push notifications are now enabled! You'll receive notifications even when the browser is closed.",
+        icon: "https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg",
+        badge: "https://res.cloudinary.com/do5wahloo/image/upload/v1746001971/zuzzuu/vhrhfihk5t6sawer0bhw.svg",
+        tag: "zuzzuu-welcome-" + Date.now(),
+        requireInteraction: false,
+        silent: false,
+        data: {
+          url: window.location.href,
+          source: "welcome-setup",
+        },
+      };
+
+      // Try service worker first, then fallback to direct notification
+      if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+        console.log("[Auto-Notification] Using service worker for welcome notification");
+        navigator.serviceWorker.controller.postMessage({
+          type: 'SHOW_WELCOME_NOTIFICATION',
+          data: welcomeData
+        });
+      } else {
+        console.log("[Auto-Notification] Using direct notification for welcome");
+        try {
+          const notification = new Notification(welcomeData.title, {
+            body: welcomeData.message,
+            icon: welcomeData.icon,
+            badge: welcomeData.badge,
+            tag: welcomeData.tag,
+            requireInteraction: welcomeData.requireInteraction,
+            silent: welcomeData.silent,
+            data: welcomeData.data,
+          });
+
+          // Handle notification click
+          notification.onclick = function() {
+            window.focus();
+            if (welcomeData.data.url && welcomeData.data.url !== window.location.href) {
+              window.open(welcomeData.data.url, '_blank');
+            }
+          };
+
+          console.log("[Auto-Notification] Welcome notification shown successfully");
+        } catch (error) {
+          console.error("[Auto-Notification] Error showing welcome notification:", error);
+        }
+      }
+
+      // Update notification system UI
+      if (window.ZuzzuuNotificationSystem && window.ZuzzuuNotificationSystem.updateUI) {
+        setTimeout(() => {
+          window.ZuzzuuNotificationSystem.updateUI();
+        }, 100);
+      }
+    }
   });
 }
 
 // Export for module usage
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = ZuzzuuNotification;
+}
+
+/**
+ * Zuzzuu Notification System with Service Worker Integration
+ * Enhanced notification system for dashboard and real-time updates
+ */
+const ZuzzuuNotificationSystem = {
+  // State management
+  state: {
+    connected: false,
+    connecting: false,
+    socket: null,
+    subscriberId: null,
+    serviceWorkerRegistered: false,
+    notificationCount: 0,
+    connectionCount: 0,
+    startTime: Date.now(),
+    environment: "development",
+    autoScroll: true,
+    logs: [],
+  },
+
+  // Initialize the notification system
+  init() {
+    this.log("info", "ðŸš€ Initializing Zuzzuu Notification System...");
+    this.detectEnvironment();
+    this.loadStoredData();
+    this.checkServiceWorker();
+    this.checkNotificationPermission();
+    this.updateUI();
+    this.startUptimeCounter();
+    this.setInitialTimestamp();
+    this.log("success", "âœ… Notification System initialized successfully");
+
+    // Register subscriber with backend before connecting
+    setTimeout(() => {
+      this.log("info", "ðŸ“ Registering subscriber with backend...");
+      this.registerSubscriber()
+        .then(() => {
+          this.log("info", "ðŸ”„ Auto-connecting to Socket.IO...");
+          this.connect();
+          // Initialize notification system with push support
+          this.initializeNotificationSystem();
+          // Check for lost notifications after successful connection
+          this.checkForLostNotifications();
+        })
+        .catch((error) => {
+          this.log("error", `âŒ Subscriber registration failed: ${error.message}`);
+          // Still attempt to connect even if registration fails
+          this.log("info", "ðŸ”„ Auto-connecting to Socket.IO anyway...");
+          this.connect();
+          // Still initialize notification system
+          this.initializeNotificationSystem();
+          // Check for lost notifications even if registration fails
+          this.checkForLostNotifications();
+        });
+    }, 1000);
+  },
+
+  // Check for lost notifications on page load
+  async checkForLostNotifications() {
+    try {
+      this.log("info", "ðŸ” Checking for lost notifications on page load...");
+
+      // Wait a bit more to ensure everything is ready
+      setTimeout(async () => {
+        if (window.zuzzuuNotification && window.zuzzuuNotification.displayNotifications) {
+          // Check for notifications from the last 24 hours
+          const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+          this.log("info", `ðŸ“… Checking for notifications since: ${since}`);
+
+          const result = await window.zuzzuuNotification.displayNotifications(since);
+
+          if (result && result.length > 0) {
+            this.log("success", `ðŸ“§ Found ${result.length} lost notifications, displaying them...`);
+          } else {
+            this.log("info", "â„¹ï¸ No lost notifications found");
+          }
+        } else {
+          this.log("warning", "âš ï¸ ZuzzuuNotification not available for lost notification check");
+        }
+      }, 2000); // Wait 2 seconds after initialization
+    } catch (error) {
+      this.log("error", `âŒ Error checking for lost notifications: ${error.message}`);
+    }
+  },
+
+  // Get Socket.IO URL based on environment
+  getSocketIOUrl() {
+    // Use production URL by default
+    return "https://vibte.shop";
+  },
+
+  // Get API base URL
+  getApiBaseUrl() {
+    // Use production URL by default
+    return "https://vibte.shop/api/v1";
+  },
+
+  // Detect environment
+  detectEnvironment() {
+    const hostname = window.location.hostname;
+    const port = window.location.port;
+
+    // Check if it's a development environment
+    if (hostname === "localhost" ||
+        hostname === "127.0.0.1" ||
+        hostname.includes("vibte.co") ||
+        (hostname === "vibte.co" && port === "6443")) {
+      this.state.environment = "development";
+    } else if (hostname.includes("staging") || hostname.includes("test")) {
+      this.state.environment = "staging";
+    } else {
+      this.state.environment = "production";
+    }
+
+    this.log("info", `ðŸŒ Environment detected: ${this.state.environment} (${hostname}:${port})`);
+  },
+
+  // Load stored data
+  loadStoredData() {
+    this.state.subscriberId = localStorage.getItem("zuzzuu_subscriber_id");
+    if (this.state.subscriberId) {
+      this.log("info", `ðŸ“± Loaded subscriber ID: ${this.state.subscriberId.substring(0, 8)}...`);
+    } else {
+      // Generate new subscriber ID
+      this.state.subscriberId = this.generateSubscriberId();
+      localStorage.setItem("zuzzuu_subscriber_id", this.state.subscriberId);
+      this.log("info", `ðŸ“± Generated new subscriber ID: ${this.state.subscriberId.substring(0, 8)}...`);
+    }
+  },
+
+  // Generate subscriber ID
+  generateSubscriberId() {
+    return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function (c) {
+      const r = (Math.random() * 16) | 0;
+      const v = c == "x" ? r : (r & 0x3) | 0x8;
+      return v.toString(16);
+    });
+  },
+
+  // Check service worker
+  async checkServiceWorker() {
+    if ("serviceWorker" in navigator) {
+      try {
+        const registration = await navigator.serviceWorker.getRegistration();
+        if (registration) {
+          this.state.serviceWorkerRegistered = true;
+          this.log("success", "ðŸ‘· Service Worker is registered");
+          this.updateUI();
+        } else {
+          this.log("info", "ðŸ‘· Service Worker not registered yet - will auto-register on page load");
+        }
+      } catch (error) {
+        this.log("error", `ðŸ‘· Service Worker check failed: ${error.message}`);
+      }
+    } else {
+      this.log("warning", "ðŸ‘· Service Worker not supported");
+      this.updateUI();
+    }
+  },
+
+  // Check notification permission
+  async checkNotificationPermission() {
+    if (typeof Notification === "undefined") {
+      this.log("warning", "ðŸ”” Notifications not supported in this browser");
+      return;
+    }
+
+    const permission = Notification.permission;
+    this.log("info", `ðŸ”” Current notification permission: ${permission}`);
+
+    if (permission === "granted") {
+      this.log("success", "âœ… Browser notifications are enabled");
+    } else if (permission === "denied") {
+      this.log("warning", "âš ï¸ Browser notifications are denied");
+    } else {
+      this.log("info", "ðŸ”” Browser notifications not yet requested");
+    }
+  },
+
+  // Register subscriber with backend
+  async registerSubscriber() {
+    try {
+      if (!this.state.subscriberId) {
+        throw new Error("No subscriber ID available");
+      }
+
+      const registrationData = {
+        subscriber_id: this.state.subscriberId,
+        browser: this.getBrowserInfo(),
+        operating_system: this.getOSInfo(),
+        country: this.getCountryInfo(),
+        language: navigator.language || "en-US",
+        status: "active",
+        metadata: {
+          environment: this.state.environment,
+          user_agent: navigator.userAgent,
+          screen_resolution: `${screen.width}x${screen.height}`,
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          registration_source: "dashboard",
+          page_url: window.location.origin,
+        },
+      };
+
+      const apiUrl = `${this.getApiBaseUrl()}/public/register`;
+      this.log("info", `ðŸ“¡ Registering subscriber at: ${apiUrl}`);
+
+      const response = await fetch(apiUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "User-Agent": navigator.userAgent,
+        },
+        body: JSON.stringify(registrationData),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Registration failed: ${response.status} - ${errorText}`);
+      }
+
+      const result = await response.json();
+      this.log("success", "âœ… Subscriber registered successfully", result);
+
+      // Update local storage with registration info
+      localStorage.setItem("zuzzuu_registration_status", "registered");
+      localStorage.setItem("zuzzuu_registration_time", new Date().toISOString());
+
+      return result;
+    } catch (error) {
+      this.log("error", `ðŸ“ Registration failed: ${error.message}`);
+      throw error;
+    }
+  },
+
+  // Get browser info
+  getBrowserInfo() {
+    const userAgent = navigator.userAgent;
+    if (userAgent.includes("Chrome")) return "Chrome";
+    if (userAgent.includes("Firefox")) return "Firefox";
+    if (userAgent.includes("Safari")) return "Safari";
+    if (userAgent.includes("Edge")) return "Edge";
+    if (userAgent.includes("Opera")) return "Opera";
+    return "Unknown";
+  },
+
+  // Get OS info
+  getOSInfo() {
+    const userAgent = navigator.userAgent;
+    if (userAgent.includes("Windows")) return "Windows";
+    if (userAgent.includes("Mac")) return "macOS";
+    if (userAgent.includes("Linux")) return "Linux";
+    if (userAgent.includes("Android")) return "Android";
+    if (userAgent.includes("iOS")) return "iOS";
+    return "Unknown";
+  },
+
+  // Get country info
+  getCountryInfo() {
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (timezone.includes("America")) return "US";
+    if (timezone.includes("Europe")) return "EU";
+    if (timezone.includes("Asia")) return "AS";
+    return "Unknown";
+  },
+
+  // Connect to Socket.IO
+  async connect() {
+    if (this.state.connecting || this.state.connected) {
+      return;
+    }
+
+    this.state.connecting = true;
+    this.updateUI();
+    this.log("info", "ðŸ”Œ Connecting to Socket.IO...");
+
+    try {
+      const socketUrl = this.getSocketIOUrl();
+      this.log("info", `ðŸ”— Connecting to: ${socketUrl}`);
+
+      // Use Socket.IO if available
+      if (typeof io !== 'undefined') {
+        this.state.socket = io(socketUrl, {
+          query: {
+            subscriber_id: this.state.subscriberId,
+            client_type: "dashboard_connection",
+            timestamp: Date.now(),
+          },
+          transports: ["websocket", "polling"],
+          timeout: 20000,
+          forceNew: true,
+          reconnection: true,
+          reconnectionDelay: 1000,
+          reconnectionAttempts: 5,
+          maxReconnectionAttempts: 5,
+        });
+
+        // Socket.IO event handlers
+        this.state.socket.on("connect", () => {
+          this.state.connected = true;
+          this.state.connecting = false;
+          this.state.connectionCount++;
+          this.log("success", `âœ… Connected to Socket.IO (ID: ${this.state.socket.id})`);
+          this.updateUI();
+        });
+
+        this.state.socket.on("disconnect", (reason) => {
+          this.state.connected = false;
+          this.state.connecting = false;
+          this.log("warning", `âŒ Disconnected from Socket.IO: ${reason}`);
+          this.updateUI();
+        });
+
+        this.state.socket.on("connect_error", (error) => {
+          this.state.connected = false;
+          this.state.connecting = false;
+          this.log("error", `âš ï¸ Connection error: ${error.message}`);
+          this.updateUI();
+        });
+
+        this.state.socket.on("notification", (data) => {
+          this.state.notificationCount++;
+          this.log("info", "ðŸ“§ Notification received via Socket.IO", data);
+          this.handleNotification(data);
+          this.updateUI();
+        });
+      } else {
+        this.log("error", "âŒ Socket.IO library not available");
+        this.state.connecting = false;
+        this.updateUI();
+        return;
+      }
+
+      // Set connection timeout
+      setTimeout(() => {
+        if (this.state.connecting && !this.state.connected) {
+          this.log("warning", "â±ï¸ Connection timeout - Socket.IO may still be connecting");
+          this.state.connecting = false;
+          this.updateUI();
+        }
+      }, 20000);
+    } catch (error) {
+      this.state.connecting = false;
+      this.log("error", `ðŸ”Œ Connection failed: ${error.message}`);
+      this.updateUI();
+    }
+  },
+
+
+  // Handle received notification
+  handleNotification(data) {
+    // FIX ISSUE #2: Prevent duplicate notifications by checking existing notifications
+    const existingNotification = this.state.logs.find(log =>
+      log.data && log.data.id === data.id
+    );
+
+    if (existingNotification) {
+      this.log('info', 'Duplicate notification detected, skipping:', data.id);
+      return;
+    }
+
+    // Only show notifications if there's actual content from API or Socket.IO
+    // Skip welcome/setup notifications that appear on every refresh
+    if (data.source === 'welcome-setup' || data.source === 'auto-setup' || data.source === 'service-worker-setup') {
+      this.log('info', 'Skipping welcome/setup notification:', data.id || 'no-id');
+      return;
+    }
+
+    // Log the notification
+    this.log('info', 'ðŸ“§ Notification received:', data);
+
+    // FIX ISSUE #3: Use site-wide notification system to show across all pages
+    if (window.siteWideNotifications) {
+      window.siteWideNotifications.displayNotification(data);
+    } else {
+      // Fallback to direct display
+      this.showNotification(data);
+    }
+
+    this.state.notificationCount++;
+    this.updateUI();
+  },
+
+  // Show notification directly (fallback method)
+  showNotification(data) {
+    // Initialize ZuzzuuNotification if not already done
+    if (!window.zuzzuuNotification) {
+      window.zuzzuuNotification = new ZuzzuuNotification({
+        debug: true,
+        autoConnect: false,
+        socketUrl: this.getSocketIOUrl(),
+        apiUrl: this.getApiBaseUrl(),
+        vapidPublicKey: null,
+      });
+    }
+
+    // Handle the notification
+    window.zuzzuuNotification.handleNotification(data);
+  },
+
+  // Initialize notification system with push support
+  initializeNotificationSystem() {
+    if (!window.zuzzuuNotification) {
+      window.zuzzuuNotification = new ZuzzuuNotification({
+        debug: true,
+        autoConnect: false,
+        socketUrl: this.getSocketIOUrl(),
+        apiUrl: this.getApiBaseUrl(),
+        vapidPublicKey: null,
+      });
+    }
+
+    // Set up push notifications
+    if (window.zuzzuuNotification && window.zuzzuuNotification.setupPushNotifications) {
+      window.zuzzuuNotification.setupPushNotifications()
+        .then(() => {
+          this.log("success", "âœ… Push notifications set up successfully");
+        })
+        .catch((error) => {
+          this.log("error", `âŒ Push notification setup failed: ${error.message}`);
+        });
+    }
+  },
+
+  // Update UI (placeholder for dashboard UI)
+  updateUI() {
+    // This would update dashboard UI if present
+    // For now, just log the status
+    this.log("info", `UI Updated - Connected: ${this.state.connected}, Notifications: ${this.state.notificationCount}`);
+  },
+
+  // Start uptime counter
+  startUptimeCounter() {
+    setInterval(() => {
+      const uptime = Math.floor((Date.now() - this.state.startTime) / 1000);
+      const hours = Math.floor(uptime / 3600);
+      const minutes = Math.floor((uptime % 3600) / 60);
+      const seconds = uptime % 60;
+
+      let uptimeText = "";
+      if (hours > 0) {
+        uptimeText = `${hours}h ${minutes}m ${seconds}s`;
+      } else if (minutes > 0) {
+        uptimeText = `${minutes}m ${seconds}s`;
+      } else {
+        uptimeText = `${seconds}s`;
+      }
+
+      // Update uptime display if element exists
+      const uptimeElement = document.getElementById("uptimeCount");
+      if (uptimeElement) {
+        uptimeElement.textContent = uptimeText;
+      }
+    }, 1000);
+  },
+
+  // Set initial timestamp
+  setInitialTimestamp() {
+    const timestamp = new Date().toLocaleTimeString();
+    const timestampElement = document.getElementById("initialTimestamp");
+    if (timestampElement) {
+      timestampElement.textContent = timestamp;
+    }
+  },
+
+  // Log function
+  log(level, message, data = null) {
+    const timestamp = new Date().toLocaleTimeString();
+    const logEntry = {
+      timestamp,
+      level,
+      message,
+      data,
+    };
+
+    this.state.logs.push(logEntry);
+
+    // Console log for debugging
+    console.log(`[ZuzzuuNotificationSystem] ${level.toUpperCase()}: ${message}`, data || "");
+
+    // Keep only last 100 log entries
+    if (this.state.logs.length > 100) {
+      this.state.logs.shift();
+    }
+  },
+};
+
+// Initialize the notification system when DOM is loaded (FULL AUTOMATIC INITIALIZATION)
+if (typeof window !== 'undefined') {
+  window.ZuzzuuNotification = ZuzzuuNotification;
+  window.ZuzzuuNotificationSystem = ZuzzuuNotificationSystem;
+
+  // Add global test function for easy access
+  window.testZuzzuuNotification = function() {
+    if (window.zuzzuuNotification) {
+      return window.zuzzuuNotification.testNotification();
+    } else {
+      console.error('ZuzzuuNotification not initialized yet. Please wait for page load.');
+      return null;
+    }
+  };
+
+  // Add global function to show system notification
+  window.showZuzzuuSystemNotification = function(title, message, options = {}) {
+    if (window.zuzzuuNotification) {
+      const notificationData = {
+        title: title || "Zuzzuu System Notification",
+        message: message || "This is a system notification",
+        ...options
+      };
+      window.zuzzuuNotification.showSystemNotification(notificationData);
+      return notificationData;
+    } else {
+      console.error('ZuzzuuNotification not initialized yet. Please wait for page load.');
+      return null;
+    }
+  };
+
+  // Add global function to reset welcome notification (for testing)
+  window.resetZuzzuuWelcomeNotification = function() {
+    if (window.zuzzuuNotification) {
+      window.zuzzuuNotification.resetWelcomeNotification();
+      console.log('Welcome notification flag reset - refresh page to see welcome notification again');
+    } else {
+      localStorage.removeItem('zuzzuu_welcome_notification_shown');
+      console.log('Welcome notification flag reset - refresh page to see welcome notification again');
+    }
+  };
+
+  document.addEventListener('DOMContentLoaded', function() {
+    ZuzzuuNotificationSystem.init();
+  });
 }
