@@ -8,8 +8,8 @@
 class ZuzzuuSubscriber {
   constructor(options = {}) {
     this.options = {
-      apiUrl: options.apiUrl || this.getApiUrl(),
-      pubRegisterUrl: options.pubRegisterUrl || this.getPublicRegisterUrl(),
+      apiUrl: options.apiUrl || (window.ZuzzuuNotificationSystem ? window.ZuzzuuNotificationSystem.getApiBaseUrl() : 'https://vibte.shop/api/v1'),
+      pubRegisterUrl: options.pubRegisterUrl || (window.ZuzzuuNotificationSystem ? `${window.ZuzzuuNotificationSystem.getApiBaseUrl()}/public/register` : 'https://vibte.shop/api/v1/public/register'),
       debug: options.debug || false,
       autoShowConsent: options.autoShowConsent !== false,
       consentDelay: options.consentDelay || 2000,
@@ -57,28 +57,6 @@ class ZuzzuuSubscriber {
     this.log('API URLs - Base:', this.options.apiUrl, 'Register:', this.options.pubRegisterUrl);
   }
 
-  /**
-   * Get API base URL based on environment
-   */
-  getApiUrl() {
-    const hostname = window.location.hostname;
-    const protocol = window.location.protocol;
-
-    // Production environment
-    if (hostname !== "localhost" && hostname !== "127.0.0.1") {
-      return "https://vibte.shop/api/v1";
-    }
-
-    // Development environment
-    return `${protocol}//${hostname}:8002/api/v1`;
-  }
-
-  /**
-   * Get public register URL based on environment
-   */
-  getPublicRegisterUrl() {
-    return this.getApiUrl() + '/public/register';
-  }
   
   /**
    * Create and inject CSS styles
@@ -241,7 +219,7 @@ class ZuzzuuSubscriber {
     let subscriberId = localStorage.getItem('zuzzuu_subscriber_id');
     
     if (!subscriberId) {
-      subscriberId = this.generateUUID();
+      subscriberId = window.ZuzzuuNotificationSystem ? window.ZuzzuuNotificationSystem.generateSubscriberId() : this.generateUUID();
       try {
         localStorage.setItem('zuzzuu_subscriber_id', subscriberId);
       } catch (e) {
@@ -252,16 +230,6 @@ class ZuzzuuSubscriber {
     return subscriberId;
   }
   
-  /**
-   * Generate a UUID v4
-   */
-  generateUUID() {
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-      const r = Math.random() * 16 | 0;
-      const v = c === 'x' ? r : (r & 0x3 | 0x8);
-      return v.toString(16);
-    });
-  }
   
   /**
    * Create popup elements
@@ -411,8 +379,13 @@ class ZuzzuuSubscriber {
       this.elements.consentButtons.style.display = 'none';
       this.showStatus('Registering with Zuzzuu...', 'info');
       
-      // Get client info
-      const clientInfo = this.detectClientInfo();
+      // Get client info using notification system utilities
+      const clientInfo = window.ZuzzuuNotificationSystem ? {
+        browser: window.ZuzzuuNotificationSystem.getBrowserInfo(),
+        os: window.ZuzzuuNotificationSystem.getOSInfo(),
+        language: navigator.language || navigator.userLanguage || 'en-US',
+        country: window.ZuzzuuNotificationSystem.getCountryInfo()
+      } : this.detectClientInfo();
       
       // Register with API FIRST (this is the most important step)
       const result = await this.registerWithApi(clientInfo);
@@ -427,21 +400,21 @@ class ZuzzuuSubscriber {
         // Mark registration as complete
         this.registrationComplete = true;
         
-        this.showStatus('✅ Registration successful! Requesting notification permission...', 'success');
+        this.showStatus('âœ… Registration successful! Requesting notification permission...', 'success');
         
         // Now try to request notification permission (optional - don't fail if denied)
         try {
           const permissionGranted = await this.requestNotificationPermission();
           if (permissionGranted) {
-            this.showStatus('✅ Registration successful! Notifications enabled.', 'success');
+            this.showStatus('âœ… Registration successful! Notifications enabled.', 'success');
             localStorage.setItem('zuzzuu_notification_permission_granted', 'true');
           } else {
-            this.showStatus('✅ Registration successful! You can enable notifications later in browser settings.', 'success');
+            this.showStatus('âœ… Registration successful! You can enable notifications later in browser settings.', 'success');
             localStorage.setItem('zuzzuu_notification_permission_granted', 'false');
           }
         } catch (permissionError) {
           this.log('Notification permission request failed, but registration was successful:', permissionError);
-          this.showStatus('✅ Registration successful! You can enable notifications later in browser settings.', 'success');
+          this.showStatus('âœ… Registration successful! You can enable notifications later in browser settings.', 'success');
           localStorage.setItem('zuzzuu_notification_permission_granted', 'false');
         }
         
@@ -464,7 +437,7 @@ class ZuzzuuSubscriber {
       }
     } catch (error) {
       this.log('Error during consent handling:', error);
-      this.showStatus('❌ Registration failed: ' + (error.message || 'Unknown error'), 'error');
+      this.showStatus('âŒ Registration failed: ' + (error.message || 'Unknown error'), 'error');
       this.options.onError(error);
       
       // Show buttons again after error
@@ -511,7 +484,7 @@ class ZuzzuuSubscriber {
   async registerWithApi(clientInfo) {
     // Ensure we have a subscriber_id before making the request
     if (!this.subscriberId) {
-      this.subscriberId = this.generateUUID();
+      this.subscriberId = window.ZuzzuuNotificationSystem ? window.ZuzzuuNotificationSystem.generateSubscriberId() : this.generateUUID();
       localStorage.setItem('zuzzuu_subscriber_id', this.subscriberId);
       this.log('Generated new subscriber ID for registration:', this.subscriberId);
     }
@@ -527,6 +500,7 @@ class ZuzzuuSubscriber {
         source: 'zuzzuu_subscriber_js',
         user_agent: navigator.userAgent,
         registration_type: 'consent_popup',
+        page_url: window.location.origin,
         timestamp: new Date().toISOString()
       }
     };
@@ -597,32 +571,44 @@ class ZuzzuuSubscriber {
     }
   }
   
+  
   /**
-   * Detect client information
+   * Generate a UUID v4 (fallback if notification system not available)
+   */
+  generateUUID() {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+      const r = Math.random() * 16 | 0;
+      const v = c === 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+  }
+
+  /**
+   * Detect client information (fallback if notification system not available)
    */
   detectClientInfo() {
     const userAgent = navigator.userAgent;
     let browser = 'Unknown';
     let os = 'Unknown';
-    
+
     // Simple browser detection
     if (userAgent.indexOf('Firefox') > -1) browser = 'Firefox';
     else if (userAgent.indexOf('Chrome') > -1) browser = 'Chrome';
     else if (userAgent.indexOf('Safari') > -1) browser = 'Safari';
     else if (userAgent.indexOf('Edge') > -1) browser = 'Edge';
     else if (userAgent.indexOf('MSIE') > -1 || userAgent.indexOf('Trident') > -1) browser = 'IE';
-    
+
     // Simple OS detection
     if (userAgent.indexOf('Windows') > -1) os = 'Windows';
     else if (userAgent.indexOf('Mac') > -1) os = 'macOS';
     else if (userAgent.indexOf('Linux') > -1) os = 'Linux';
     else if (userAgent.indexOf('Android') > -1) os = 'Android';
     else if (userAgent.indexOf('iPhone') > -1 || userAgent.indexOf('iPad') > -1) os = 'iOS';
-    
+
     // Get language and country
     const language = navigator.language || navigator.userLanguage || 'en-US';
     let country = 'US';
-    
+
     try {
       const countryCode = language.split('-').pop().toUpperCase();
       if (countryCode && countryCode.length === 2) {
@@ -631,10 +617,10 @@ class ZuzzuuSubscriber {
     } catch (e) {
       this.log('Error getting country from language:', e);
     }
-    
+
     return { browser, os, language, country };
   }
-  
+
   /**
    * Log debug messages
    */
@@ -648,7 +634,7 @@ class ZuzzuuSubscriber {
 // Initialize when DOM is loaded
 if (typeof window !== 'undefined') {
   window.ZuzzuuSubscriber = ZuzzuuSubscriber;
-  
+
   document.addEventListener('DOMContentLoaded', function() {
     // Auto-initialize if data-zuzzuu-subscriber attribute is present
     const elements = document.querySelectorAll('[data-zuzzuu-subscriber]');
@@ -657,13 +643,46 @@ if (typeof window !== 'undefined') {
         debug: el.dataset.debug === 'true',
         autoShowConsent: el.dataset.autoShowConsent !== 'false'
       };
-      
+
       if (el.dataset.apiUrl) options.apiUrl = el.dataset.apiUrl;
       if (el.dataset.pubRegisterUrl) options.pubRegisterUrl = el.dataset.pubRegisterUrl;
       if (el.dataset.consentDelay) options.consentDelay = parseInt(el.dataset.consentDelay);
-      
+
       window.zuzzuuSubscriber = new ZuzzuuSubscriber(options);
     });
+
+    // Auto-initialize subscriber system if not already initialized
+    if (!window.zuzzuuSubscriber) {
+      window.zuzzuuSubscriber = new ZuzzuuSubscriber({
+        debug: false,
+        autoShowConsent: true,
+        consentDelay: 2000,
+        onRegistered: function(data) {
+          console.log('[ZuzzuuSubscriber] Registration completed:', data);
+
+          // Notify notification system that subscriber is registered
+          if (window.ZuzzuuNotificationSystem) {
+            window.ZuzzuuNotificationSystem.state.subscriberId = data.subscriberId;
+            window.ZuzzuuNotificationSystem.log('success', 'ðŸ“± Subscriber registered, connecting to notifications...');
+
+            // Auto-connect after successful registration
+            setTimeout(() => {
+              if (window.ZuzzuuNotificationSystem && !window.ZuzzuuNotificationSystem.state.connected) {
+                window.ZuzzuuNotificationSystem.connect();
+              }
+            }, 1000);
+          }
+        },
+        onError: function(error) {
+          console.error('[ZuzzuuSubscriber] Registration failed:', error);
+
+          // Notify notification system of registration failure
+          if (window.ZuzzuuNotificationSystem) {
+            window.ZuzzuuNotificationSystem.log('error', `âŒ Subscriber registration failed: ${error.message}`);
+          }
+        }
+      });
+    }
   });
 }
 
