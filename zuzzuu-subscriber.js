@@ -321,6 +321,12 @@ class ZuzzuuSubscriber {
   hideConsentPopup() {
     this.elements.popup.classList.remove('visible');
     this.log('Consent popup hidden');
+    // Remove the element from the DOM after the transition completes
+    setTimeout(() => {
+      if (this.elements.popup && this.elements.popup.parentNode) {
+        this.elements.popup.parentNode.removeChild(this.elements.popup);
+      }
+    }, 500); // Match the CSS transition duration (0.5s)
   }
   
   /**
@@ -400,21 +406,21 @@ class ZuzzuuSubscriber {
         // Mark registration as complete
         this.registrationComplete = true;
         
-        this.showStatus('âœ… Registration successful! Requesting notification permission...', 'success');
-        
+        this.showStatus('Registration successful! Requesting notification permission...', 'success');
+
         // Now try to request notification permission (optional - don't fail if denied)
         try {
           const permissionGranted = await this.requestNotificationPermission();
           if (permissionGranted) {
-            this.showStatus('âœ… Registration successful! Notifications enabled.', 'success');
+            this.showStatus('Registration successful! Notifications enabled.', 'success');
             localStorage.setItem('zuzzuu_notification_permission_granted', 'true');
           } else {
-            this.showStatus('âœ… Registration successful! You can enable notifications later in browser settings.', 'success');
+            this.showStatus('Registration successful! You can enable notifications later in browser settings.', 'success');
             localStorage.setItem('zuzzuu_notification_permission_granted', 'false');
           }
         } catch (permissionError) {
           this.log('Notification permission request failed, but registration was successful:', permissionError);
-          this.showStatus('âœ… Registration successful! You can enable notifications later in browser settings.', 'success');
+          this.showStatus('Registration successful! You can enable notifications later in browser settings.', 'success');
           localStorage.setItem('zuzzuu_notification_permission_granted', 'false');
         }
         
@@ -437,7 +443,7 @@ class ZuzzuuSubscriber {
       }
     } catch (error) {
       this.log('Error during consent handling:', error);
-      this.showStatus('âŒ Registration failed: ' + (error.message || 'Unknown error'), 'error');
+      this.showStatus('Ã¢ÂÅ’ Registration failed: ' + (error.message || 'Unknown error'), 'error');
       this.options.onError(error);
       
       // Show buttons again after error
@@ -663,12 +669,13 @@ if (typeof window !== 'undefined') {
           // Notify notification system that subscriber is registered
           if (window.ZuzzuuNotificationSystem) {
             window.ZuzzuuNotificationSystem.state.subscriberId = data.subscriberId;
-            window.ZuzzuuNotificationSystem.log('success', 'ðŸ“± Subscriber registered, connecting to notifications...');
+            window.ZuzzuuNotificationSystem.log('success', 'Ã°Å¸â€œÂ± Subscriber registered, connecting to notifications...');
 
             // Auto-connect after successful registration
             setTimeout(() => {
               if (window.ZuzzuuNotificationSystem && !window.ZuzzuuNotificationSystem.state.connected) {
                 window.ZuzzuuNotificationSystem.connect();
+                window.ZuzzuuNotificationSystem.checkForLostNotifications();
               }
             }, 1000);
           }
@@ -678,7 +685,7 @@ if (typeof window !== 'undefined') {
 
           // Notify notification system of registration failure
           if (window.ZuzzuuNotificationSystem) {
-            window.ZuzzuuNotificationSystem.log('error', `âŒ Subscriber registration failed: ${error.message}`);
+            window.ZuzzuuNotificationSystem.log('error', `Ã¢ÂÅ’ Subscriber registration failed: ${error.message}`);
           }
         }
       });
