@@ -7,10 +7,15 @@
 
 class ZuzzuuSubscriber {
   constructor(options = {}) {
+    // Environment-aware URLs
+    const isDev = import.meta.env.DEV;
+    const apiBaseUrl = options.apiUrl || (isDev ? "http://localhost:8001/api/v1" : "https://vibte.shop/api/v1");
+    const pubRegisterUrl = options.pubRegisterUrl || `${apiBaseUrl}/public/register`;
+
     this.options = {
-      apiUrl: options.apiUrl || (window.ZuzzuuNotificationSystem ? window.ZuzzuuNotificationSystem.getApiBaseUrl() : 'https://vibte.shop/api/v1'),
-      pubRegisterUrl: options.pubRegisterUrl || (window.ZuzzuuNotificationSystem ? `${window.ZuzzuuNotificationSystem.getApiBaseUrl()}/public/register` : 'https://vibte.shop/api/v1/public/register'),
-      debug: options.debug || false,
+      apiUrl: apiBaseUrl,
+      pubRegisterUrl: pubRegisterUrl,
+      debug: options.debug || isDev,
       autoShowConsent: options.autoShowConsent !== false,
       consentDelay: options.consentDelay || 2000,
       onRegistered: options.onRegistered || function() {},
@@ -219,7 +224,7 @@ class ZuzzuuSubscriber {
     let subscriberId = localStorage.getItem('zuzzuu_subscriber_id');
     
     if (!subscriberId) {
-      subscriberId = window.ZuzzuuNotificationSystem ? window.ZuzzuuNotificationSystem.generateSubscriberId() : this.generateUUID();
+      subscriberId = this.generateUUID();
       try {
         localStorage.setItem('zuzzuu_subscriber_id', subscriberId);
       } catch (e) {
@@ -386,12 +391,7 @@ class ZuzzuuSubscriber {
       this.showStatus('Registering with Zuzzuu...', 'info');
       
       // Get client info using notification system utilities
-      const clientInfo = window.ZuzzuuNotificationSystem ? {
-        browser: window.ZuzzuuNotificationSystem.getBrowserInfo(),
-        os: window.ZuzzuuNotificationSystem.getOSInfo(),
-        language: navigator.language || navigator.userLanguage || 'en-US',
-        country: window.ZuzzuuNotificationSystem.getCountryInfo()
-      } : this.detectClientInfo();
+      const clientInfo = this.detectClientInfo();
       
       // Register with API FIRST (this is the most important step)
       const result = await this.registerWithApi(clientInfo);
@@ -443,7 +443,7 @@ class ZuzzuuSubscriber {
       }
     } catch (error) {
       this.log('Error during consent handling:', error);
-      this.showStatus('Ã¢ÂÅ’ Registration failed: ' + (error.message || 'Unknown error'), 'error');
+      this.showStatus('Registration failed: ' + (error.message || 'Unknown error'), 'error');
       this.options.onError(error);
       
       // Show buttons again after error
@@ -490,7 +490,7 @@ class ZuzzuuSubscriber {
   async registerWithApi(clientInfo) {
     // Ensure we have a subscriber_id before making the request
     if (!this.subscriberId) {
-      this.subscriberId = window.ZuzzuuNotificationSystem ? window.ZuzzuuNotificationSystem.generateSubscriberId() : this.generateUUID();
+      this.subscriberId = this.generateUUID();
       localStorage.setItem('zuzzuu_subscriber_id', this.subscriberId);
       this.log('Generated new subscriber ID for registration:', this.subscriberId);
     }
@@ -669,7 +669,7 @@ if (typeof window !== 'undefined') {
           // Notify notification system that subscriber is registered
           if (window.ZuzzuuNotificationSystem) {
             window.ZuzzuuNotificationSystem.state.subscriberId = data.subscriberId;
-            window.ZuzzuuNotificationSystem.log('success', 'Ã°Å¸â€œÂ± Subscriber registered, connecting to notifications...');
+            window.ZuzzuuNotificationSystem.log('success', 'Subscriber registered, connecting to notifications...');
 
             // Auto-connect after successful registration
             setTimeout(() => {
@@ -685,7 +685,7 @@ if (typeof window !== 'undefined') {
 
           // Notify notification system of registration failure
           if (window.ZuzzuuNotificationSystem) {
-            window.ZuzzuuNotificationSystem.log('error', `Ã¢ÂÅ’ Subscriber registration failed: ${error.message}`);
+            window.ZuzzuuNotificationSystem.log('error', `Subscriber registration failed: ${error.message}`);
           }
         }
       });
