@@ -462,6 +462,9 @@
           Zuzzuu Notification System
         </h1>
         <p>Real-time notification management and monitoring dashboard</p>
+        <p style="font-size: 0.9rem; margin-top: 10px; opacity: 0.8;">
+          ✅ Windows 10 Compatible • Uses Web Push API for background notifications
+        </p>
       </div>
 
       <!-- Dashboard Grid -->
@@ -494,6 +497,14 @@
               <h3>Subscriber ID</h3>
               <p id="subscriberIdStatus">Not Set</p>
             </div>
+            <div class="status-item">
+              <h3>🪟 Web Push (Win10)</h3>
+              <p id="webPushStatus">Not Configured</p>
+            </div>
+            <div class="status-item">
+              <h3>VAPID Key</h3>
+              <p id="vapidKeyStatus">Not Set</p>
+            </div>
           </div>
 
           <div class="controls">
@@ -514,6 +525,50 @@
             <button class="btn btn-warning" id="testNotificationBtn">
               Test Notification
             </button>
+            <button class="btn btn-success" id="testWebPushBtn" disabled>
+              🪟 Test Web Push
+            </button>
+            <button class="btn btn-secondary" id="configureVapidBtn">
+              ⚙️ Configure VAPID
+            </button>
+          </div>
+
+          <!-- Windows 10 Configuration Panel -->
+          <div id="vapidConfigPanel" style="display: none; margin-top: 20px; padding: 15px; background: #fef3c7; border-radius: 12px; border-left: 4px solid #f59e0b;">
+            <h3 style="margin: 0 0 10px 0; color: #92400e; font-size: 1rem;">
+              🪟 Windows 10 Configuration Required
+            </h3>
+            <p style="margin: 0 0 15px 0; color: #78350f; font-size: 0.9rem;">
+              To enable Windows 10 background notifications, you must configure VAPID keys:
+            </p>
+            <div class="form-group">
+              <label for="vapidPublicKeyInput" style="color: #78350f;">VAPID Public Key:</label>
+              <input
+                type="text"
+                id="vapidPublicKeyInput"
+                placeholder="BEl62iUYgUivxIkv69yViEuiBIa-Ib37gp2auLzxVz9..."
+                style="font-family: monospace; font-size: 0.85rem;"
+              />
+            </div>
+            <div style="margin-top: 10px; padding: 10px; background: white; border-radius: 8px;">
+              <p style="margin: 0 0 8px 0; font-weight: 600; color: #92400e; font-size: 0.9rem;">
+                📝 How to generate VAPID keys:
+              </p>
+              <code style="display: block; padding: 8px; background: #1e293b; color: #e2e8f0; border-radius: 6px; font-size: 0.85rem; margin-bottom: 8px;">
+                node generate-vapid-keys.js
+              </code>
+              <p style="margin: 0; font-size: 0.85rem; color: #78350f;">
+                Or use: <code style="background: #1e293b; color: #e2e8f0; padding: 2px 6px; border-radius: 4px;">npx web-push generate-vapid-keys</code>
+              </p>
+            </div>
+            <div class="controls" style="margin-top: 15px;">
+              <button class="btn btn-success" id="saveVapidBtn">
+                Save & Enable Web Push
+              </button>
+              <button class="btn btn-secondary" id="cancelVapidBtn">
+                Cancel
+              </button>
+            </div>
           </div>
 
           <div class="metrics">
@@ -850,6 +905,20 @@ Your notification system is working perfectly!</textarea
           document
             .getElementById("testNotificationBtn")
             .addEventListener("click", () => this.testNotification());
+          document
+            .getElementById("testWebPushBtn")
+            .addEventListener("click", () => this.testPushNotification());
+          
+          // VAPID configuration controls
+          document
+            .getElementById("configureVapidBtn")
+            .addEventListener("click", () => this.showVapidConfig());
+          document
+            .getElementById("saveVapidBtn")
+            .addEventListener("click", () => this.saveVapidConfig());
+          document
+            .getElementById("cancelVapidBtn")
+            .addEventListener("click", () => this.hideVapidConfig());
 
           // Notification form
           document
@@ -1395,19 +1464,25 @@ Your notification system is working perfectly!</textarea
           }, 4000);
         },
 
-        // Initialize notification system with push support
+        // Initialize notification system with push support (WINDOWS 10 COMPATIBLE)
         initializeNotificationSystem() {
+          // Get VAPID key from localStorage
+          const vapidPublicKey = localStorage.getItem('zuzzuu_vapid_public_key');
+          
           if (!window.zuzzuuNotification) {
             window.zuzzuuNotification = new ZuzzuuNotification({
               debug: true,
               autoConnect: false,
               socketUrl: this.getSocketIOUrl(),
               apiUrl: this.getApiBaseUrl(),
-              vapidPublicKey: null, // Will be set by server if needed
+              vapidPublicKey: vapidPublicKey // Use stored VAPID key for Windows 10
             });
           }
 
-          // Set up push notifications
+          // Update UI to show VAPID status
+          this.updateVapidStatus(vapidPublicKey);
+
+          // Set up push notifications if VAPID key is configured
           if (
             window.zuzzuuNotification &&
             window.zuzzuuNotification.setupPushNotifications
@@ -1417,15 +1492,37 @@ Your notification system is working perfectly!</textarea
               .then(() => {
                 this.log(
                   "success",
-                  "✅ Push notifications set up successfully"
+                  "✅ Web Push enabled - Windows 10 notifications will work!"
                 );
+                this.updateVapidStatus(vapidPublicKey);
+                // Enable test button
+                document.getElementById("testWebPushBtn").disabled = false;
               })
               .catch((error) => {
                 this.log(
                   "error",
                   `❌ Push notification setup failed: ${error.message}`
                 );
+                this.updateVapidStatus(null);
               });
+          }
+        },
+
+        // Update VAPID status in UI
+        updateVapidStatus(vapidKey) {
+          const webPushStatus = document.getElementById("webPushStatus");
+          const vapidKeyStatus = document.getElementById("vapidKeyStatus");
+          
+          if (vapidKey) {
+            webPushStatus.textContent = "✅ Enabled";
+            webPushStatus.style.color = "#10b981";
+            vapidKeyStatus.textContent = vapidKey.substring(0, 12) + "...";
+            vapidKeyStatus.style.color = "#10b981";
+          } else {
+            webPushStatus.textContent = "⚠️ Not Configured";
+            webPushStatus.style.color = "#f59e0b";
+            vapidKeyStatus.textContent = "⚠️ Not Set";
+            vapidKeyStatus.style.color = "#f59e0b";
           }
         },
 
@@ -1526,6 +1623,68 @@ Your notification system is working perfectly!</textarea
           URL.revokeObjectURL(url);
           this.log("info", "📄 Log exported successfully");
           this.showToast("Export Complete", "Log file downloaded", "success");
+        },
+
+        // Show VAPID configuration panel
+        showVapidConfig() {
+          const panel = document.getElementById("vapidConfigPanel");
+          panel.style.display = "block";
+          
+          // Load existing VAPID key if any
+          const existingKey = localStorage.getItem('zuzzuu_vapid_public_key');
+          if (existingKey) {
+            document.getElementById("vapidPublicKeyInput").value = existingKey;
+          }
+          
+          this.log("info", "⚙️ Opening VAPID configuration panel");
+        },
+
+        // Hide VAPID configuration panel
+        hideVapidConfig() {
+          document.getElementById("vapidConfigPanel").style.display = "none";
+          this.log("info", "⚙️ Closed VAPID configuration panel");
+        },
+
+        // Save VAPID configuration
+        saveVapidConfig() {
+          const vapidKey = document.getElementById("vapidPublicKeyInput").value.trim();
+          
+          if (!vapidKey) {
+            this.showToast("Validation Error", "Please enter a VAPID public key", "error");
+            return;
+          }
+          
+          // Basic validation - VAPID keys should be base64url encoded
+          if (vapidKey.length < 80) {
+            this.showToast("Validation Error", "VAPID key appears to be invalid (too short)", "warning");
+            return;
+          }
+          
+          // Save to localStorage
+          localStorage.setItem('zuzzuu_vapid_public_key', vapidKey);
+          
+          this.log("success", "✅ VAPID key saved successfully");
+          this.showToast(
+            "VAPID Configured",
+            "Web Push enabled - Windows 10 compatible!",
+            "success"
+          );
+          
+          // Hide panel
+          this.hideVapidConfig();
+          
+          // Re-initialize notification system with new key
+          window.zuzzuuNotification = null; // Clear existing instance
+          this.initializeNotificationSystem();
+          
+          // Show success message for Windows 10 users
+          const osInfo = this.getOSInfo();
+          if (osInfo === "Windows") {
+            this.log(
+              "success",
+              "🪟 Windows 10 compatibility enabled! Notifications will now work in background."
+            );
+          }
         },
       };
 

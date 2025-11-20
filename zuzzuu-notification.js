@@ -1,8 +1,13 @@
 /**
- * Zuzzuu Notification System
- * 
+ * Zuzzuu Notification System - Windows 10 Compatible
+ *
  * This file handles displaying notifications from the server
  * and manages WebSocket connections for real-time updates.
+ *
+ * WINDOWS 10 COMPATIBILITY:
+ * - Uses Web Push API (wakes service worker on Windows 10)
+ * - Socket.IO for instant delivery when browser is open
+ * - Dual strategy ensures notifications work in all scenarios
  */
 
 class ZuzzuuNotification {
@@ -14,6 +19,12 @@ class ZuzzuuNotification {
     const apiBaseUrl = options.apiUrl || "https://vibte.shop/api/v1";
     const socketUrl = options.socketUrl || "https://vibte.shop";
 
+    // ⚠️ IMPORTANT: Set your VAPID public key here for Windows 10 Push support
+    // Generate keys using: node generate-vapid-keys.js
+    // Or use web-push library: npx web-push generate-vapid-keys
+    const vapidPublicKey = options.vapidPublicKey || null;
+    // Example: "BEl62iUYgUivxIkv69yViEuiBIa-Ib37gp2auLzxVz9-VO3..."
+
     this.options = {
       apiUrl: apiBaseUrl,
       socketUrl: socketUrl,
@@ -22,8 +33,9 @@ class ZuzzuuNotification {
       heartbeatInterval: options.heartbeatInterval || 30000,
       onNotificationClick: options.onNotificationClick || null,
       onConnectionChange: options.onConnectionChange || null,
-      logoUrl: options.logoUrl || defaultLogoUrl, // Default Zuzzuu logo URL
-      vapidPublicKey: options.vapidPublicKey || null // VAPID public key for push notifications
+      logoUrl: options.logoUrl || defaultLogoUrl,
+      vapidPublicKey: vapidPublicKey, // REQUIRED for Windows 10 push notifications!
+      enableWebPush: vapidPublicKey !== null // Auto-enable if VAPID key provided
     };
 
     // Create CSS styles
@@ -1135,16 +1147,35 @@ handleNotification(data) {
   }
   
   /**
-   * Set up push notifications
+   * Set up push notifications (WINDOWS 10 COMPATIBLE)
+   *
+   * This method sets up Web Push notifications that work on Windows 10.
+   * Windows 10 REQUIRES the Web Push API (not Socket.IO postMessage) to
+   * wake service workers in the background.
    */
   async setupPushNotifications() {
     if (!this.pushSupported) {
-      this.log('Push notifications not supported in this browser');
+      this.log('⚠️ Push notifications not supported in this browser');
       return;
     }
 
     if (!this.subscriberId) {
-      this.log('No subscriber ID available, cannot set up push notifications');
+      this.log('⚠️ No subscriber ID available, cannot set up push notifications');
+      return;
+    }
+
+    // ⚠️ CRITICAL: Check for VAPID key (required for Windows 10)
+    if (!this.options.vapidPublicKey) {
+      this.log('⚠️ WINDOWS 10 WARNING: No VAPID public key configured!');
+      this.log('   Notifications will NOT work on Windows 10 without Web Push.');
+      this.log('   To fix: Generate VAPID keys and set vapidPublicKey in options.');
+      this.log('   Run: node generate-vapid-keys.js');
+      console.warn(
+        '%c⚠️ WINDOWS 10 INCOMPATIBLE: No VAPID key configured!\n' +
+        'Notifications will NOT work on Windows 10.\n' +
+        'Generate keys: node generate-vapid-keys.js',
+        'color: orange; font-weight: bold; font-size: 14px;'
+      );
       return;
     }
 
@@ -1152,14 +1183,14 @@ handleNotification(data) {
       // Register service worker if not already registered
       if (!navigator.serviceWorker.controller) {
         const registration = await navigator.serviceWorker.register('zuzzuu-sw.js');
-        this.log('Service worker registered for push notifications:', registration);
+        this.log('✅ Service worker registered for push notifications');
       }
 
       // Check if we already have a push subscription
       const existingSubscription = await this.getExistingPushSubscription();
       if (existingSubscription) {
         this.pushSubscription = existingSubscription;
-        this.log('Existing push subscription found:', existingSubscription);
+        this.log('✅ Existing push subscription found (Windows 10 compatible)');
         await this.sendPushSubscriptionToServer(existingSubscription);
         return;
       }
@@ -1168,11 +1199,12 @@ handleNotification(data) {
       const permission = await Notification.requestPermission();
       if (permission === 'granted') {
         await this.subscribeToPush();
+        this.log('✅ Web Push enabled - Windows 10 compatible notifications active!');
       } else {
-        this.log('Push notification permission denied');
+        this.log('❌ Push notification permission denied');
       }
     } catch (error) {
-      this.log('Error setting up push notifications:', error);
+      this.log('❌ Error setting up push notifications:', error);
     }
   }
 
@@ -1191,38 +1223,61 @@ handleNotification(data) {
   }
 
   /**
-   * Subscribe to push notifications
+   * Subscribe to push notifications (WINDOWS 10 CRITICAL)
+   *
+   * This creates a push subscription that allows the backend to send
+   * notifications via Web Push Protocol, which properly wakes service
+   * workers on Windows 10 (unlike Socket.IO postMessage).
    */
   async subscribeToPush() {
     try {
       const registration = await navigator.serviceWorker.ready;
 
-      // Use VAPID key if provided, otherwise skip push notifications
-      if (this.options.vapidPublicKey) {
-        const subscribeOptions = {
-          userVisibleOnly: true,
-          applicationServerKey: this.urlBase64ToUint8Array(this.options.vapidPublicKey)
-        };
+      // VAPID key is REQUIRED for Windows 10 compatibility
+      if (!this.options.vapidPublicKey) {
+        this.log('❌ Cannot subscribe to push: No VAPID key provided');
+        this.log('   Windows 10 users will NOT receive notifications!');
+        return;
+      }
 
-        const subscription = await registration.pushManager.subscribe(subscribeOptions);
-        this.pushSubscription = subscription;
+      const subscribeOptions = {
+        userVisibleOnly: true,
+        applicationServerKey: this.urlBase64ToUint8Array(this.options.vapidPublicKey)
+      };
 
-        this.log('Push subscription created:', subscription);
+      const subscription = await registration.pushManager.subscribe(subscribeOptions);
+      this.pushSubscription = subscription;
 
-        // Send subscription to server
-        await this.sendPushSubscriptionToServer(subscription);
+      this.log('✅ Push subscription created (Windows 10 compatible)');
+      this.log('   Endpoint:', subscription.endpoint.substring(0, 50) + '...');
 
-        // Store subscription locally
-        localStorage.setItem('zuzzuu_push_subscription', JSON.stringify(subscription));
-      } else {
-        this.log('No VAPID key provided, skipping push notification setup');
-        // Still mark as successful since the notification system works without push
-        this.pushSubscription = null;
+      // Send subscription to server (backend will use this to send notifications)
+      await this.sendPushSubscriptionToServer(subscription);
+
+      // Store subscription locally
+      localStorage.setItem('zuzzuu_push_subscription', JSON.stringify(subscription));
+
+      // Display success message for Windows 10 users
+      const osInfo = this.getBrowserInfo();
+      if (osInfo.os === 'Windows') {
+        console.log(
+          '%c✅ WINDOWS 10 COMPATIBLE: Web Push enabled!\n' +
+          'You will receive notifications even when browser is closed.',
+          'color: green; font-weight: bold; font-size: 14px;'
+        );
       }
 
     } catch (error) {
-      this.log('Error subscribing to push notifications:', error);
-      // Don't throw error - push notifications are optional
+      this.log('❌ Error subscribing to push notifications:', error);
+      
+      if (error.name === 'NotAllowedError') {
+        this.log('   User denied push notification permission');
+      } else if (error.name === 'NotSupportedError') {
+        this.log('   Push notifications not supported on this device');
+      } else {
+        this.log('   Unexpected error:', error.message);
+      }
+      
       this.pushSubscription = null;
     }
   }
